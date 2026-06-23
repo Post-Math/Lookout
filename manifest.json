@@ -1,10 +1,10 @@
 {
   "id": "lookout",
   "name": "Lookout",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "minAppVersion": "1.0.0",
   "description": "Survey wide content instead of scrolling sideways. Pan and zoom Mermaid diagrams (wheel, Ctrl+wheel, or buttons), fit them to the frame, and open diagrams or wide tables full-screen.",
   "author": "DOT",
-  "authorUrl": "https://github.com/Post-Math/Lookout",
+  "authorUrl": "https://github.com/Post-Math",
   "isDesktopOnly": false
 }
