@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+
+# Node (only relevant if a build/tooling step is ever added)
+node_modules/
+npm-debug.log*
+
+# Obsidian test vault artifacts
+data.json
