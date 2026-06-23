@@ -100,16 +100,24 @@ Please also:
 
 ## Releasing (maintainers)
 
-1. Merge `dev` into `main` via PR.
-2. Bump `version` in `manifest.json` and add the matching entry to
-   `versions.json` (`"<version>": "<minAppVersion>"`).
-3. Tag the release commit on `main` with the bare version (no `v` prefix, to
-   match Obsidian's convention) and push the tag:
-   ```bash
-   git tag 1.2.0
-   git push origin 1.2.0
-   ```
-4. The **Release** workflow validates the tag against `manifest.json` and
-   publishes a GitHub release with `main.js`, `manifest.json`, and `styles.css`.
+Releases are **automatic on merge to `main`** — there is no manual tagging step.
+The version bump lands on `dev` first:
+
+1. On a branch off `dev`, prepare the release:
+   - bump `version` in `manifest.json`,
+   - add the matching entry to `versions.json` (`"<version>": "<minAppVersion>"`),
+   - move the `Unreleased` notes in [`CHANGELOG.md`](CHANGELOG.md) into a dated
+     `## [<version>]` section.
+
+   Open a PR into `dev` and merge it.
+2. Open a **release PR** from `dev` into `main` using the release template
+   (append `?expand=1&template=release.md` to the compare URL) and merge it
+   after a code-owner approval.
+3. On merge, the **Release** workflow reads the version from `manifest.json`,
+   pushes the bare-version tag (no `v` prefix, to match Obsidian's convention),
+   and publishes a GitHub release with `main.js`, `manifest.json`, and
+   `styles.css`. It is idempotent — a merge that does not bump the version
+   (e.g. a CI or docs change) is a no-op.
+4. Back-merge `main` into `dev` so the histories stay reconciled.
 
 Thank you for contributing! 🛰️

@@ -1,15 +1,24 @@
 name: Release
 
-# Releases are cut from `main`. Pushing a version tag (e.g. 1.2.0 — no `v`
-# prefix, matching manifest.json, per Obsidian's convention) builds the
-# release and attaches the plugin artifacts.
+# Releases are cut automatically when `main` advances. The job reads the version
+# from manifest.json and, if that version has not been released yet, creates and
+# pushes the matching tag (bare version, no `v` prefix — Obsidian's convention)
+# and publishes the GitHub release with the plugin artifacts.
+#
+# It is idempotent: a push to `main` that does NOT bump the version (e.g. a CI
+# or docs change) finds the tag already exists and does nothing. Tag + release
+# happen in the same job, so we don't rely on a tag push triggering a second
+# workflow (GITHUB_TOKEN tag pushes don't trigger other workflows).
 on:
   push:
-    tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
+    branches: [main]
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -29,20 +38,39 @@ jobs:
           node --check main.js
           node scripts/validate.mjs
 
-      - name: Verify tag matches manifest version
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="$(node -p "require('./manifest.json').version")"
-          if [ "$TAG" != "$VERSION" ]; then
-            echo "::error::Tag '$TAG' does not match manifest version '$VERSION'."
-            exit 1
-          fi
+      - name: Read version from manifest
+        id: meta
+        run: echo "version=$(node -p "require('./manifest.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub release
+      - name: Check whether this version is already released
+        id: guard
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          V="${{ steps.meta.outputs.version }}"
+          if gh release view "$V" >/dev/null 2>&1 \
+             || [ -n "$(git ls-remote --tags origin "refs/tags/$V")" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Version $V already released or tagged — nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Version $V is new — will tag and release."
+          fi
+
+      - name: Tag the release commit
+        if: steps.guard.outputs.exists == 'false'
+        run: |
+          V="${{ steps.meta.outputs.version }}"
+          git tag "$V"
+          git push origin "$V"
+
+      - name: Create GitHub release
+        if: steps.guard.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="${{ steps.meta.outputs.version }}"
+          gh release create "$V" \
             main.js manifest.json styles.css \
-            --title "Lookout $GITHUB_REF_NAME" \
+            --title "Lookout $V" \
             --generate-notes
