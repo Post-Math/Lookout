@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [1.1.3] - 2026-06-23
+
+### Changed
+
+- Metadata: `author` is now **Post-Math** (matches the organization and the
+  community-plugin listing). No functional change.
+
 ## [1.1.2] - 2026-06-23
 
 ### Changed
@@ -37,6 +44,7 @@ Initial public release.
   mode), not only in Reading view. The table being actively edited is left
   untouched.
 
-[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.1.2...HEAD
+[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.1.3...HEAD
+[1.1.3]: https://github.com/Post-Math/Lookout/compare/1.1.2...1.1.3
 [1.1.2]: https://github.com/Post-Math/Lookout/compare/1.1.1...1.1.2
 [1.1.1]: https://github.com/Post-Math/Lookout/releases/tag/1.1.1
