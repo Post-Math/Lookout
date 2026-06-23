@@ -1,0 +1,48 @@
+name: Release
+
+# Releases are cut from `main`. Pushing a version tag (e.g. 1.2.0 — no `v`
+# prefix, matching manifest.json, per Obsidian's convention) builds the
+# release and attaches the plugin artifacts.
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate
+        run: |
+          node --check main.js
+          node scripts/validate.mjs
+
+      - name: Verify tag matches manifest version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="$(node -p "require('./manifest.json').version")"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::Tag '$TAG' does not match manifest version '$VERSION'."
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            main.js manifest.json styles.css \
+            --title "Lookout $GITHUB_REF_NAME" \
+            --generate-notes

@@ -1,0 +1,52 @@
+name: Bug report
+description: Report something that isn't working as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug! Please fill out the details below.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+      placeholder: When I open a note with a wide table in Live Preview, …
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal note (Mermaid/table snippet) if possible.
+      placeholder: |
+        1. Open a note containing …
+        2. Switch to Live Preview / Reading view
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: lookout-version
+    attributes:
+      label: Lookout version
+      placeholder: 1.1.1
+    validations:
+      required: true
+  - type: input
+    id: obsidian-version
+    attributes:
+      label: Obsidian version
+      placeholder: 1.x.x
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15 / Windows 11 / Linux / iOS / Android
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, console errors (Ctrl/Cmd+Shift+I), theme, other plugins, …

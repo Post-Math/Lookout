@@ -1,0 +1,11 @@
+# Code owners for Lookout.
+#
+# Branch protection requires a review from a code owner before any pull
+# request can be merged into `main` or `dev`, so the owners listed here are
+# the only people whose approval can satisfy that requirement.
+#
+# To hand maintainership to a team instead of an individual, replace the
+# handle below with an org team (e.g. @Post-Math/lookout-maintainers); the
+# team must have write access to this repository.
+
+* @jphan32

@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Keep GitHub Actions used in workflows up to date. (The plugin itself has
+  # no runtime dependencies — it ships as plain CommonJS with no build step.)
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: ci
+    target-branch: dev

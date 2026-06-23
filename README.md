@@ -1,5 +1,9 @@
 # Lookout
 
+[![CI](https://github.com/Post-Math/Lookout/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Post-Math/Lookout/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Post-Math/Lookout?sort=semver)](https://github.com/Post-Math/Lookout/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 > Survey wide content instead of scrolling sideways.
 
 Lookout is an [Obsidian](https://obsidian.md) plugin for reading **wide Mermaid diagrams and wide tables**. Instead of squinting through a note's narrow horizontal scrollbar, you can pan and zoom a diagram, fit it to the frame, or throw either a diagram or a table up full‑screen.
@@ -58,11 +62,43 @@ Add `Post-Math/Lookout` as a beta plugin with the [BRAT](https://github.com/TfTH
 Lookout ships as plain CommonJS with **no build step** — Obsidian loads `main.js` directly. To work on it, clone this repo (or symlink it) into a vault's `.obsidian/plugins/lookout/` folder and edit `main.js` / `styles.css` directly, then reload the plugin.
 
 ```
-main.js        # the plugin (DiagramView, TableView, LookoutPlugin)
-styles.css     # the drafting/survey-instrument UI
-manifest.json  # plugin metadata
-versions.json  # plugin version -> minimum Obsidian version
+main.js              # the plugin (DiagramView, TableView, LookoutPlugin)
+styles.css           # the drafting/survey-instrument UI
+manifest.json        # plugin metadata
+versions.json        # plugin version -> minimum Obsidian version
+scripts/validate.mjs # CI checks (manifest/versions consistency, required files)
 ```
+
+Run the same checks CI runs before opening a PR:
+
+```bash
+node --check main.js
+node scripts/validate.mjs
+```
+
+## Branching model
+
+Lookout uses a git-flow style model:
+
+- **`main`** — release / deployment. Always reflects the latest published release. Protected; only receives merges from `dev` (and `hotfix/*`).
+- **`dev`** — integration branch and the **default branch**. The base for all day-to-day work.
+- **`feat/*`, `fix/*`, `docs/*`, `chore/*`** — short-lived topic branches, branched off `dev` and merged back into `dev`.
+
+```
+feat/my-change  ──▶  dev  ──▶  main  ──▶  tag (e.g. 1.2.0)  ──▶  Release
+```
+
+Always branch off `dev` and open pull requests against `dev` — never `main`.
+
+## Contributing
+
+Contributions are welcome! External contributors work via a **fork** and open
+pull requests against `dev`. A [code owner](.github/CODEOWNERS) review and a
+green CI run are required before a PR can merge.
+
+Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow, and our
+**[Code of Conduct](CODE_OF_CONDUCT.md)**. For security issues, see
+**[SECURITY.md](SECURITY.md)**.
 
 ## License
 
