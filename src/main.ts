@@ -56,7 +56,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
  * element. Constructed via the DOM (no `innerHTML`), per Obsidian's guidelines.
  */
 function svgIcon(name: IconName): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, "svg");
+  const svg = activeDocument.createElementNS(SVG_NS, "svg");
   const attrs: Record<string, string> = {
     class: "lookout-ico",
     viewBox: "0 0 24 24",
@@ -71,7 +71,7 @@ function svgIcon(name: IconName): SVGSVGElement {
   };
   for (const [k, v] of Object.entries(attrs)) svg.setAttribute(k, v);
   for (const [tag, childAttrs] of ICONS[name]) {
-    const child = document.createElementNS(SVG_NS, tag);
+    const child = activeDocument.createElementNS(SVG_NS, tag);
     for (const [k, v] of Object.entries(childAttrs)) child.setAttribute(k, v);
     svg.appendChild(child);
   }
@@ -83,7 +83,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   cls?: string
 ): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
+  const node = activeDocument.createElement(tag);
   if (cls) node.className = cls;
   return node;
 }
@@ -179,17 +179,7 @@ class DiagramView {
     this.drag = null;
     this.destroyed = false;
 
-    this._bind();
     this._build();
-  }
-
-  _bind() {
-    this.onWheel = this.onWheel.bind(this);
-    this.onPointerDown = this.onPointerDown.bind(this);
-    this.onPointerMove = this.onPointerMove.bind(this);
-    this.onPointerUp = this.onPointerUp.bind(this);
-    this.onKeyDown = this.onKeyDown.bind(this);
-    this.onResize = this.onResize.bind(this);
   }
 
   /* ---------- natural (intrinsic) size of the diagram ---------- */
@@ -211,7 +201,7 @@ class DiagramView {
         const b = this.svg.getBBox();
         w = b.width;
         h = b.height;
-      } catch (e) {
+      } catch {
         /* svg not laid out yet */
       }
     }
@@ -222,10 +212,12 @@ class DiagramView {
     this._measure();
 
     // The svg renders at its intrinsic size; the stage transform does the rest.
-    this.svg.style.width = this.nat.w + "px";
-    this.svg.style.height = this.nat.h + "px";
-    this.svg.style.maxWidth = "none";
-    this.svg.style.display = "block";
+    this.svg.setCssStyles({
+      width: this.nat.w + "px",
+      height: this.nat.h + "px",
+      maxWidth: "none",
+      display: "block",
+    });
 
     this.stage = el("div", "lookout-stage");
     this.viewport = el(
@@ -245,7 +237,7 @@ class DiagramView {
     if (this.fs) {
       this.overlay = el("div", "lookout-fs");
       this.overlay.appendChild(this.viewport);
-      document.body.appendChild(this.overlay);
+      activeDocument.body.appendChild(this.overlay);
     } else {
       // svg has been moved into the stage; place the viewport where it used to be.
       // The clamp/center styles live on Obsidian's `.mermaid` wrapper, which is
@@ -346,12 +338,12 @@ class DiagramView {
       this.ro.observe(this.viewport);
     }
     if (this.fs) {
-      document.addEventListener("keydown", this.onKeyDown, true);
+      activeDocument.addEventListener("keydown", this.onKeyDown, true);
     }
   }
 
   _scheduleInitialView(tries = 0) {
-    requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       if (this.destroyed) return;
       if (this.viewport.clientWidth > 0) {
         // Inline default is 1:1 top-left; full screen opens fit-to-frame.
@@ -374,7 +366,7 @@ class DiagramView {
     if (this.fs) return;
     const maxH = Math.round(window.innerHeight * 0.7);
     const h = clamp(this.nat.h, INLINE_FLOOR, maxH);
-    this.viewport.style.height = Math.round(h) + "px";
+    this.viewport.setCssStyles({ height: Math.round(h) + "px" });
   }
 
   // Default / "100%" view: actual size, anchored top-left.
@@ -473,7 +465,7 @@ class DiagramView {
   }
 
   /* ---------- input handlers ---------- */
-  onWheel(e: WheelEvent) {
+  onWheel = (e: WheelEvent) => {
     const rect = this.viewport.getBoundingClientRect();
 
     if (e.ctrlKey || e.metaKey) {
@@ -517,7 +509,7 @@ class DiagramView {
     }
   }
 
-  onPointerDown(e: PointerEvent) {
+  onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
     const target = e.target as Element | null;
     if (target && target.closest(".lookout-toolbar")) return;
@@ -531,7 +523,7 @@ class DiagramView {
     this.viewport.classList.add("is-dragging");
     try {
       this.viewport.setPointerCapture(e.pointerId);
-    } catch (err) {
+    } catch {
       /* ignore */
     }
     this.viewport.addEventListener("pointermove", this.onPointerMove);
@@ -539,7 +531,7 @@ class DiagramView {
     this.viewport.addEventListener("pointercancel", this.onPointerUp);
   }
 
-  onPointerMove(e: PointerEvent) {
+  onPointerMove = (e: PointerEvent) => {
     if (!this.drag || e.pointerId !== this.drag.id) return;
     this.viewMode = "free";
     this.tx = this.drag.tx + (e.clientX - this.drag.sx);
@@ -548,12 +540,12 @@ class DiagramView {
     this._render(false);
   }
 
-  onPointerUp(e: PointerEvent) {
+  onPointerUp = (e: PointerEvent) => {
     if (!this.drag) return;
     this.viewport.classList.remove("is-dragging");
     try {
       this.viewport.releasePointerCapture(this.drag.id);
-    } catch (err) {
+    } catch {
       /* ignore */
     }
     this.viewport.removeEventListener("pointermove", this.onPointerMove);
@@ -562,14 +554,14 @@ class DiagramView {
     this.drag = null;
   }
 
-  onKeyDown(e: KeyboardEvent) {
+  onKeyDown = (e: KeyboardEvent) => {
     // Full-screen Esc is captured at document level.
     if (this.fs && e.key === "Escape") {
       e.preventDefault();
       this.close();
       return;
     }
-    if (!this.fs && document.activeElement !== this.viewport) return;
+    if (!this.fs && activeDocument.activeElement !== this.viewport) return;
 
     const step = 60;
     switch (e.key) {
@@ -623,7 +615,7 @@ class DiagramView {
     this._render(true);
   }
 
-  onResize() {
+  onResize = () => {
     if (this.destroyed) return;
     const vw = this.viewport.clientWidth;
     if (!vw) return;
@@ -649,8 +641,10 @@ class DiagramView {
         this.stage.classList.remove("is-animating");
       }, 190);
     }
-    this.stage.style.transform =
-      "translate(" + this.tx + "px," + this.ty + "px) scale(" + this.scale + ")";
+    this.stage.setCssStyles({
+      transform:
+        "translate(" + this.tx + "px," + this.ty + "px) scale(" + this.scale + ")",
+    });
 
     const pct = Math.round(this.scale * 100);
     this.gaugeNum.textContent = pct + "%";
@@ -660,7 +654,7 @@ class DiagramView {
     const lmin = Math.log(this.minScale);
     const lmax = Math.log(this.maxScale);
     const frac = clamp((ls - lmin) / (lmax - lmin), 0, 1);
-    this.gaugeFill.style.width = (frac * 100).toFixed(1) + "%";
+    this.gaugeFill.setCssStyles({ width: (frac * 100).toFixed(1) + "%" });
 
     this.btnOut.disabled = this.scale <= this.minScale + 1e-4;
     this.btnIn.disabled = this.scale >= this.maxScale - 1e-4;
@@ -670,15 +664,12 @@ class DiagramView {
   openFullscreen() {
     if (this._fsView) return;
     const clone = this.svg.cloneNode(true) as SVGSVGElement;
-    clone.style.width = "";
-    clone.style.height = "";
-    clone.style.maxWidth = "";
-    const self = this;
+    clone.setCssStyles({ width: "", height: "", maxWidth: "" });
     this._fsView = new DiagramView(clone, {
       fullscreen: true,
-      onClose: function () {
-        self._fsView = null;
-        self.viewport.focus({ preventScroll: true });
+      onClose: () => {
+        this._fsView = null;
+        this.viewport.focus({ preventScroll: true });
       },
     });
   }
@@ -696,15 +687,12 @@ class DiagramView {
     window.clearTimeout(this._animTimer);
     if (this.ro) this.ro.disconnect();
     if (this.fs) {
-      document.removeEventListener("keydown", this.onKeyDown, true);
+      activeDocument.removeEventListener("keydown", this.onKeyDown, true);
       if (this.overlay) this.overlay.remove();
       return;
     }
     // Restore the inline svg to its original parent so unloading is clean.
-    this.svg.style.width = "";
-    this.svg.style.height = "";
-    this.svg.style.maxWidth = "";
-    this.svg.style.display = "";
+    this.svg.setCssStyles({ width: "", height: "", maxWidth: "", display: "" });
     if (this.parent && this.viewport.parentElement === this.parent) {
       this.parent.insertBefore(this.svg, this.viewport);
       this.viewport.remove();
@@ -741,8 +729,6 @@ class TableView {
     this.parent = options.parent;
     this.anchor = options.anchor;
     this.destroyed = false;
-    this.onCloseFs = this.onCloseFs.bind(this);
-    this.onFsKeyDown = this.onFsKeyDown.bind(this);
     this._build();
   }
 
@@ -772,15 +758,14 @@ class TableView {
     const overlay = el("div", "lookout-fs lookout-fs--table");
     this.overlay = overlay;
 
-    const scroll = el("div", "lookout-table-fs-scroll");
+    // The clone lives outside the note, so Obsidian's table styling (borders,
+    // padding, header) — scoped to `.markdown-rendered` — would not reach it.
+    // Give the scroll container that class so the clone inherits the same
+    // styling as the inline view (no extra wrapper, no `display: contents`).
+    const scroll = el("div", "lookout-table-fs-scroll markdown-rendered");
     const clone = this.table.cloneNode(true) as HTMLTableElement;
     clone.classList.add("lookout-table-fs-table");
-    // The clone lives outside the note, so Obsidian's table styling (borders,
-    // padding, header) — which is scoped to `.markdown-rendered` — would not
-    // reach it. Wrap it in that context so full screen matches the inline view.
-    const mdContext = el("div", "markdown-rendered");
-    mdContext.appendChild(clone);
-    scroll.appendChild(mdContext);
+    scroll.appendChild(clone);
     overlay.appendChild(scroll);
 
     const close = el("button", "lookout-btn lookout-fs-close");
@@ -796,21 +781,21 @@ class TableView {
       if (e.target === overlay || e.target === scroll) this.onCloseFs();
     });
 
-    document.body.appendChild(overlay);
-    document.addEventListener("keydown", this.onFsKeyDown, true);
+    activeDocument.body.appendChild(overlay);
+    activeDocument.addEventListener("keydown", this.onFsKeyDown, true);
     close.focus({ preventScroll: true });
   }
 
-  onFsKeyDown(e: KeyboardEvent) {
+  onFsKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
       this.onCloseFs();
     }
   }
 
-  onCloseFs() {
+  onCloseFs = () => {
     if (!this.overlay) return;
-    document.removeEventListener("keydown", this.onFsKeyDown, true);
+    activeDocument.removeEventListener("keydown", this.onFsKeyDown, true);
     this.overlay.remove();
     this.overlay = null;
   }
@@ -856,14 +841,14 @@ export default class LookoutPlugin extends Plugin {
     this.observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
         for (const node of Array.from(m.addedNodes)) {
-          if (node instanceof HTMLElement || node instanceof SVGElement) {
+          if (node.instanceOf(HTMLElement) || node.instanceOf(SVGElement)) {
             this.queueScan();
             return;
           }
         }
       }
     });
-    this.observer.observe(document.body, { childList: true, subtree: true });
+    this.observer.observe(activeDocument.body, { childList: true, subtree: true });
 
     this.registerMarkdownPostProcessor((elm) => {
       window.setTimeout(() => this.scanWithin(elm), 50);
@@ -892,11 +877,11 @@ export default class LookoutPlugin extends Plugin {
   }
 
   scan() {
-    this.scanWithin(document.body);
+    this.scanWithin(activeDocument.body);
   }
 
   scanWithin(root: ParentNode | null) {
-    if (!root || !root.querySelectorAll) return;
+    if (!root) return;
     const svgs = root.querySelectorAll<SVGSVGElement>(
       '.mermaid svg, svg[id^="mermaid-"]'
     );
@@ -947,7 +932,7 @@ export default class LookoutPlugin extends Plugin {
       (v): v is DiagramView =>
         v instanceof DiagramView &&
         !v.fs &&
-        document.body.contains(v.viewport)
+        activeDocument.body.contains(v.viewport)
     );
     if (view) {
       view.openFullscreen();

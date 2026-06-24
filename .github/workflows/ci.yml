@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint (eslint-plugin-obsidianmd)
+        run: npm run lint
+
       - name: Type-check & build (tsc --noEmit + esbuild)
         run: npm run build
 

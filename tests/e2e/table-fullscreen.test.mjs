@@ -24,6 +24,16 @@ const HARNESS = "file://" + resolve(here, "fixtures", "table-harness.html");
 // Load the bundled plugin under a minimal `obsidian` stub and start it.
 const bootstrap = `
 (function () {
+  // Obsidian runtime augmentations the bundle relies on (absent outside Obsidian).
+  globalThis.activeWindow = window;
+  globalThis.activeDocument = document;
+  const _setCssStyles = function (styles) { Object.assign(this.style, styles); };
+  const _setCssProps = function (props) { for (const k in props) this.style.setProperty(k, props[k]); };
+  HTMLElement.prototype.setCssStyles = _setCssStyles;
+  HTMLElement.prototype.setCssProps = _setCssProps;
+  SVGElement.prototype.setCssStyles = _setCssStyles;
+  SVGElement.prototype.setCssProps = _setCssProps;
+  Node.prototype.instanceOf = function (t) { return this instanceof t; };
   const __obsidian = {
     Plugin: class { constructor(app){ this.app = app; } registerEvent(){} registerMarkdownPostProcessor(){} addCommand(){} },
     Notice: class { constructor(m){ this.message = m; } },
