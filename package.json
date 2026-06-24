@@ -1,6 +1,6 @@
 {
   "name": "lookout",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "Survey wide content instead of scrolling sideways — pan/zoom Mermaid diagrams and open wide tables full-screen in Obsidian.",
   "main": "main.js",
   "private": true,
