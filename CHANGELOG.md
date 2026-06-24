@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [1.1.4] - 2026-06-24
+
 ### Fixed
 
 - Full-screen tables now match the inline view's styling. The clone is opened
