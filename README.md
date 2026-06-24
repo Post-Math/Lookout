@@ -15,11 +15,6 @@ The controls follow a quiet *drafting / survey-instrument* visual language: they
 borrow Obsidian's own theme surfaces, with a single survey-cyan accent reserved
 for focus and the active zoom gauge.
 
-![Pan and zoom a wide Mermaid diagram](docs/images/pan-zoom.svg)
-
-> ℹ️ The images in this README are placeholders — see
-> [`docs/images/`](docs/images/) for what to replace them with.
-
 ## Features
 
 ### Mermaid diagrams
@@ -41,8 +36,6 @@ The inline frame hugs the diagram's natural (100 %) height, so a fully visible
 diagram has no dead space; tall diagrams are capped at 70 % of the window height
 and pan.
 
-![Diagram full screen](docs/images/fullscreen.svg)
-
 ### Tables
 
 Wide tables keep their normal horizontal scroll but gain a single **full-screen**
@@ -52,8 +45,6 @@ note's narrow reading column.
 
 Tables are enhanced in both **Reading view** and **Live Preview**; the table you
 are actively editing is left untouched.
-
-![Wide table full screen](docs/images/table-fullscreen.svg)
 
 ## Keyboard & commands
 

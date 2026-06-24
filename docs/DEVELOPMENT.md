@@ -29,7 +29,7 @@ tsconfig.json        # type-check config (strict, noEmit)
 package.json         # dev dependencies + scripts
 scripts/validate.mjs # manifest/versions consistency + required-files check
 tests/e2e/           # headless-browser E2E (drives the built main.js)
-docs/                # developer docs + README images
+docs/                # developer docs
 main.js              # BUILD OUTPUT (gitignored) — do not edit
 ```
 
