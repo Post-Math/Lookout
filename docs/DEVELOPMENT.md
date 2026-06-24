@@ -61,6 +61,7 @@ historically diverged (see the table-processing guards in `src/main.ts`).
 npm run dev         # esbuild watch build (development)
 npm run build       # tsc --noEmit (type-check) + esbuild production bundle
 npm run typecheck   # tsc --noEmit only
+npm run lint        # eslint-plugin-obsidianmd (Obsidian compliance) — see below
 npm run validate    # manifest/versions consistency + required-files check
 npm run test:e2e    # headless browser E2E (see below) — run after `npm run build`
 ```
@@ -69,10 +70,23 @@ CI (and a pre-PR check) runs, on Node 20:
 
 ```bash
 npm ci
+npm run lint        # Obsidian plugin-guideline lint
 npm run build       # type-check + bundle -> main.js
 node --check main.js
 node scripts/validate.mjs
 ```
+
+### Linting — Obsidian compliance (recurrence prevention)
+
+The Obsidian plugin reviewer runs `eslint-plugin-obsidianmd` (no `innerHTML`,
+`activeDocument`/`activeWindow` for popout windows, `setCssStyles`/`setCssProps`
+instead of direct `.style` assignment, `.instanceOf()` for cross-window checks,
+window-scoped timers, etc.). We run that **same ruleset locally and in CI**
+(`eslint.config.mjs`, flat config with typed linting), so a violation fails the
+build here instead of surfacing at submission/review time. `npm run lint` must
+be green before opening a PR; the CI `validate` job enforces it. When a rule is
+deliberately not applicable (e.g. `ui/sentence-case` for Korean UI text), it is
+turned off in `eslint.config.mjs` with a comment rather than ignored ad hoc.
 
 There are no unit tests, but there is a headless-browser **E2E** check (see
 below). Beyond that, behavioural verification is manual in a vault.

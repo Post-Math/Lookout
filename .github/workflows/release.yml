@@ -24,6 +24,10 @@ jobs:
   release:
     name: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # mint the provenance signing certificate
+      attestations: write # write the artifact attestation
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -36,6 +40,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint (eslint-plugin-obsidianmd)
+        run: npm run lint
 
       - name: Type-check & build (tsc --noEmit + esbuild)
         run: npm run build
@@ -70,6 +77,16 @@ jobs:
           V="${{ steps.meta.outputs.version }}"
           git tag "$V"
           git push origin "$V"
+
+      # Cryptographically attest that these assets were built from this repo by
+      # this workflow, so users can verify provenance with `gh attestation verify`.
+      - name: Attest build provenance
+        if: steps.guard.outputs.exists == 'false'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            styles.css
 
       - name: Create GitHub release
         if: steps.guard.outputs.exists == 'false'

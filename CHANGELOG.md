@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- Brought the source into line with the Obsidian plugin guidelines (no
+  user-visible change): `setCssStyles`/`setCssProps` instead of direct `.style`
+  assignment, `activeDocument`/`activeWindow` for popout-window safety,
+  `.instanceOf()` for cross-window type checks, window-scoped `requestAnimation
+  Frame`, and auto-bound arrow-function event handlers.
+- Full-screen tables get their `.markdown-rendered` styling context from the
+  scroll container directly, dropping the partially-supported `display: contents`.
+- esbuild marks Node built-ins external via `node:module` `builtinModules`,
+  removing the `builtin-modules` dependency.
+
+### Internal — recurrence prevention
+
+- Added **`eslint-plugin-obsidianmd`** (the Obsidian reviewer's ruleset) with a
+  flat, type-aware `eslint.config.mjs`; `npm run lint` now gates CI and the
+  release workflow, so guideline violations fail the build instead of surfacing
+  at submission.
+- Release assets `main.js` and `styles.css` are now published with **GitHub
+  build-provenance attestations** (`actions/attest-build-provenance`).
 
 ## [1.1.4] - 2026-06-24
 
