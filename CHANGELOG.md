@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- Wide tables: the full-screen button no longer floats off-screen at the table's
+  hidden far-right edge. The host is now a grid that caps itself at the visible
+  column width (so the table's overflow stays inside our own scroller) and the
+  button is pinned to the visible top-right corner.
+- Full-screen tables no longer show stray ":::"/"⋮" marks: Obsidian's Live
+  Preview table-editor chrome is now stripped from the full-screen clone on
+  both axes — column and row menu buttons (`.table-col-btn`, `.table-row-btn`)
+  as well as the column and row drag grips (`.table-col-drag-handle`,
+  `.table-row-drag-handle`). The earlier fix missed the horizontal column grip.
 
 ## [1.1.5] - 2026-06-24
 
