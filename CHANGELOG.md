@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- Diagram host overflow is now neutralized on the actual `.mermaid` wrapper (via
+  `closest('.mermaid')`), so the override applies even when the diagram svg is
+  nested or matched only by its `mermaid-*` id. No user-visible change in the
+  common case; removes a latent edge case.
+
+### Internal
+
+- Removed the remaining `!important` declarations in `styles.css`, overriding
+  Obsidian's styles by selector specificity instead.
+- Migrated the project to **TypeScript + esbuild** (the official
+  `obsidian-sample-plugin` toolchain): source now lives in `src/main.ts` and is
+  bundled to `main.js` (a build artifact, no longer committed). CI and the
+  release workflow type-check (`tsc --noEmit`) and build before packaging. No
+  change to the shipped plugin's behavior.
+- Followed Obsidian's code guidelines: icons are now built via the DOM
+  (`createElementNS`) instead of `innerHTML`.
+- Restructured docs: `README.md` is now user-facing; developer setup and
+  architecture moved to `docs/DEVELOPMENT.md`.
 
 ## [1.1.3] - 2026-06-23
 
