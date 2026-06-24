@@ -1,0 +1,52 @@
+<!doctype html>
+<!--
+  E2E fixture: a wide-ish table inside Obsidian's `.markdown-rendered` context.
+  The runner injects the real styles.css and the built main.js (with an obsidian
+  stub) on top of this. The CSS below is a minimal stand-in for the slice of
+  Obsidian's theme that styles tables — it lives ONLY under `.markdown-rendered`,
+  exactly like Obsidian's own table rules, so the test can prove the full-screen
+  clone inherits the same styling as the inline table.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        --background-primary: #1e1e1f;
+        --background-secondary: #2a2a2c;
+        --background-modifier-border: #4a4a4c;
+        --background-modifier-hover: #333;
+        --text-normal: #dcddde;
+        --text-muted: #8a8f98;
+        background: var(--background-primary);
+        color: var(--text-normal);
+        margin: 0;
+      }
+      .markdown-rendered table {
+        border-collapse: collapse;
+      }
+      .markdown-rendered th,
+      .markdown-rendered td {
+        border: 1px solid var(--background-modifier-border);
+        padding: 4px 8px;
+      }
+      .markdown-rendered thead th {
+        background-color: var(--background-secondary);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="markdown-rendered">
+      <table>
+        <thead>
+          <tr><th>A</th><th>B</th><th>C</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>two</td><td>three</td></tr>
+          <tr><td>4</td><td>five</td><td>six</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>

@@ -5,9 +5,15 @@
 .idea/
 .vscode/
 
-# Node (only relevant if a build/tooling step is ever added)
+# Node / build tooling
 node_modules/
 npm-debug.log*
+*.tsbuildinfo
+
+# Build output — main.js is bundled from src/ by esbuild (not committed).
+# It is rebuilt in CI and attached to releases. Run `npm run build` locally.
+main.js
+main.js.map
 
 # Obsidian test vault artifacts
 data.json
