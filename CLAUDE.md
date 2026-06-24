@@ -12,6 +12,7 @@ Lookout is an **Obsidian plugin** for surveying wide content: pan/zoom Mermaid d
 npm ci                 # install dev deps (first time / CI)
 npm run dev            # esbuild watch: rebuild main.js on save (local dev)
 npm run build          # tsc --noEmit (type-check) + esbuild production bundle
+npm run lint           # eslint-plugin-obsidianmd (Obsidian compliance)
 npm run validate       # manifest/versions consistency + required files
 ```
 
@@ -19,12 +20,15 @@ The full CI gate (run before every PR), on Node 20:
 
 ```bash
 npm ci
+npm run lint           # Obsidian plugin-guideline lint (eslint-plugin-obsidianmd)
 npm run build          # type-check + bundle -> main.js
 node --check main.js
 node scripts/validate.mjs
 ```
 
 There are no unit tests — behavioural verification is manual in a real vault (see below). `tsconfig.json` is `strict` with `strictPropertyInitialization` off (fields init in `_build()`); see `docs/DEVELOPMENT.md`.
+
+**Obsidian compliance is enforced by lint, not memory.** `eslint-plugin-obsidianmd` (the same ruleset the Obsidian reviewer runs) gates CI, so write code that passes it: no `innerHTML`; `activeDocument`/`activeWindow` not `document`/`window`; `setCssStyles`/`setCssProps` (available on both `HTMLElement` and `SVGElement`) instead of direct `.style.x =`; `.instanceOf(HTMLElement)` not `instanceof`; auto-bound arrow-function fields for event handlers. Releases attest provenance for `main.js`/`styles.css` via `actions/attest-build-provenance`.
 
 ## Local development against a vault
 
