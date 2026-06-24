@@ -710,12 +710,15 @@ interface TableViewOptions {
 
 /**
  * Obsidian's Live Preview table editor injects interactive controls *inside*
- * the rendered table — the column handle/menu button (`.table-col-btn`) above
- * each column and the row drag grip (`.table-row-drag-handle`) beside each row.
- * They are useful while editing but are dead "⋮" chrome in our read-only
- * full-screen clone, so we strip them from the clone (never the live table).
+ * the rendered table, on both axes: the column/row menu buttons
+ * (`.table-col-btn`, `.table-row-btn`) and the drag grips
+ * (`.table-col-drag-handle` — a horizontal ":::" grip, `.table-row-drag-handle`
+ * — a vertical "⋮" grip). They are useful while editing but are dead chrome in
+ * our read-only full-screen clone, so we strip all four from the clone (never
+ * the live table).
  */
-const TABLE_EDITOR_CHROME = ".table-col-btn, .table-row-drag-handle";
+const TABLE_EDITOR_CHROME =
+  ".table-col-btn, .table-row-btn, .table-col-drag-handle, .table-row-drag-handle";
 
 /**
  * Wide tables get a single full-screen button (no zoom). Inline, the table
@@ -775,7 +778,7 @@ class TableView {
     const clone = this.table.cloneNode(true) as HTMLTableElement;
     clone.classList.add("lookout-table-fs-table");
     // Drop the Live Preview editor's drag handles/menu buttons that came along
-    // with the clone — they would otherwise show as stray "⋮" marks per cell.
+    // with the clone — they would otherwise show as stray ":::"/"⋮" marks.
     clone.querySelectorAll(TABLE_EDITOR_CHROME).forEach((node) => node.remove());
     scroll.appendChild(clone);
     overlay.appendChild(scroll);
