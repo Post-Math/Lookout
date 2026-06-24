@@ -1,0 +1,60 @@
+<!doctype html>
+<!--
+  E2E fixture: a TALL, narrow Mermaid <svg> (600×1900) — the shape of a long
+  `sequenceDiagram`. Its width already fits the reading column, so fit-to-WIDTH
+  alone would leave it at 1:1 and overflow the 70vh frame vertically (the bug
+  fixed in 1.1.7). Fit must also contain it against the 70vh height cap so the
+  whole diagram shows with no vertical scroll.
+
+  The runner injects the real styles.css and the built main.js (obsidian stub).
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      /* Obsidian applies border-box app-wide; mirror it so the test exercises
+         the same box model the plugin runs under (the viewport's 1px border
+         must not eat into the content height the diagram is sized against). */
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        --background-primary: #1e1e1f;
+        --background-secondary: #2a2a2c;
+        --background-modifier-border: #4a4a4c;
+        --background-modifier-hover: #333;
+        --text-normal: #dcddde;
+        --text-muted: #8a8f98;
+        --font-monospace: ui-monospace, monospace;
+        background: var(--background-primary);
+        color: var(--text-normal);
+        margin: 0;
+      }
+      /* Reading column WIDER than the diagram (600px) — width is not the
+         constraint here; height is. */
+      .reading {
+        max-width: 700px;
+      }
+      .mermaid {
+        text-align: center;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="markdown-rendered reading">
+      <p>Tall, narrow sequence-diagram-shaped Mermaid below.</p>
+      <div class="mermaid">
+        <svg
+          id="mermaid-tall"
+          viewBox="0 0 600 1900"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect x="2" y="2" width="596" height="1896" fill="#22325a" stroke="#88aaff" stroke-width="3" />
+          <line x1="120" y1="0" x2="120" y2="1900" stroke="#88aaff" stroke-width="2" />
+          <line x1="300" y1="0" x2="300" y2="1900" stroke="#88aaff" stroke-width="2" />
+          <line x1="480" y1="0" x2="480" y2="1900" stroke="#88aaff" stroke-width="2" />
+          <circle cx="300" cy="950" r="80" fill="#0e9cc4" />
+        </svg>
+      </div>
+    </div>
+  </body>
+</html>

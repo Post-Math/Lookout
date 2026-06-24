@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit --skipLibCheck",
     "lint": "eslint \"src/**/*.ts\"",
     "validate": "node scripts/validate.mjs",
-    "test:e2e": "node tests/e2e/table-fullscreen.test.mjs"
+    "test:e2e": "npm run test:e2e:table && npm run test:e2e:diagram",
+    "test:e2e:table": "node tests/e2e/table-fullscreen.test.mjs",
+    "test:e2e:diagram": "node tests/e2e/diagram-fit.test.mjs"
   },
   "keywords": [
     "obsidian",

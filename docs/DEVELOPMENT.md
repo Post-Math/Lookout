@@ -94,15 +94,21 @@ below). Beyond that, behavioural verification is manual in a vault.
 ### E2E tests
 
 `tests/e2e/` drives the **real bundled `main.js`** in headless Chromium under a
-tiny `obsidian` stub, then asserts rendered behavior. `table-fullscreen.test.mjs`
-guards a real regression: the full-screen table must inherit the same theme
-styling and layout as the inline view (it lives outside the note's
-`.markdown-rendered` context, so the clone is re-wrapped in one).
+tiny `obsidian` stub, then asserts rendered behavior. Each case guards a real
+regression:
+
+- `table-fullscreen.test.mjs` — the full-screen table must inherit the same
+  theme styling and layout as the inline view (it lives outside the note's
+  `.markdown-rendered` context, so the clone is re-wrapped in one).
+- `diagram-fit.test.mjs` — "fit to frame" on an inline Mermaid diagram must size
+  the frame to the fitted content, so a tall diagram (e.g. a long
+  `sequenceDiagram`) shows whole with no vertical scroll, while the default view
+  stays at 100%.
 
 ```bash
 npx playwright install chromium   # one-time (or set CHROMIUM_PATH to a binary)
-npm run build                     # the test loads the built main.js
-npm run test:e2e
+npm run build                     # the tests load the built main.js
+npm run test:e2e                  # both cases (test:e2e:table / test:e2e:diagram run one)
 ```
 
 It is not part of the CI `validate` job (no browser there); run it locally when

@@ -1,0 +1,55 @@
+<!doctype html>
+<!--
+  E2E fixture: a wide-AND-tall Mermaid <svg> (1600×1200) in a reading-column
+  container (Obsidian's `.markdown-rendered`). Used to verify that "fit to frame"
+  scales it down and the frame height matches the fitted content (no dead space,
+  no vertical scroll). The runner injects the real styles.css and the built
+  main.js (with an obsidian stub) on top of this.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      /* Obsidian applies border-box app-wide; mirror it so the test exercises
+         the same box model the plugin runs under (the viewport's 1px border
+         must not eat into the content height the diagram is sized against). */
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        --background-primary: #1e1e1f;
+        --background-secondary: #2a2a2c;
+        --background-modifier-border: #4a4a4c;
+        --background-modifier-hover: #333;
+        --text-normal: #dcddde;
+        --text-muted: #8a8f98;
+        --font-monospace: ui-monospace, monospace;
+        background: var(--background-primary);
+        color: var(--text-normal);
+        margin: 0;
+      }
+      .reading {
+        max-width: 700px;
+      }
+      .mermaid {
+        text-align: center;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="markdown-rendered reading">
+      <p>Wide and tall Mermaid diagram below.</p>
+      <div class="mermaid">
+        <svg
+          id="mermaid-1"
+          viewBox="0 0 1600 1200"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect x="2" y="2" width="1596" height="1196" fill="#22325a" stroke="#88aaff" stroke-width="3" />
+          <line x1="0" y1="0" x2="1600" y2="1200" stroke="#88aaff" stroke-width="3" />
+          <line x1="1600" y1="0" x2="0" y2="1200" stroke="#88aaff" stroke-width="3" />
+          <circle cx="800" cy="600" r="120" fill="#0e9cc4" />
+        </svg>
+      </div>
+    </div>
+  </body>
+</html>

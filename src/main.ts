@@ -17,6 +17,7 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
 const ZOOM_STEP = 1.2; // per button press
 const INLINE_FLOOR = 56; // min inline frame height (px) — just enough for the toolbar
+const INLINE_MAX_VH = 0.7; // inline frame caps at 70% of the viewport height
 
 /* ---- lucide-style icons, 1.75px stroke for a precise drafting feel ---- */
 type IconChild = [tag: string, attrs: Record<string, string>];
@@ -356,17 +357,35 @@ class DiagramView {
   }
 
   /* ---------- layout ---------- */
-  // Frame height is based on the diagram's natural height (the 100% basis),
-  // so it stays stable whether the content is shown at 100% or fit-to-frame.
-  // The frame hugs the diagram's 100% height so a fully visible diagram has no
-  // dead space: shorter diagrams shrink the frame, taller ones are capped at
-  // 70vh and pan. INLINE_FLOOR only keeps the toolbar usable — a diagram
-  // shorter than it simply sits smaller than the frame (acceptable).
-  _setInlineHeight() {
+  // Frame height tracks the *displayed* diagram height (natural height × the
+  // current scale), rounded UP so the frame is never a sub-pixel shorter than
+  // the diagram — which would surface as a slight vertical scroll. At 100%
+  // (scale = 1) this is the natural height, capped at 70vh (taller diagrams
+  // then pan); in "fit" the scale is contained so the whole diagram sits inside
+  // the frame with the heights matching exactly. INLINE_FLOOR keeps the toolbar
+  // usable — a diagram shorter than it simply sits smaller (acceptable).
+  _setInlineHeight(scale = 1) {
     if (this.fs) return;
-    const maxH = Math.round(window.innerHeight * 0.7);
-    const h = clamp(this.nat.h, INLINE_FLOOR, maxH);
-    this.viewport.setCssStyles({ height: Math.round(h) + "px" });
+    const target = Math.ceil(
+      clamp(this.nat.h * scale, INLINE_FLOOR, this._inlineMaxHeight())
+    );
+    this.viewport.setCssStyles({ height: target + "px" });
+    // Obsidian applies `box-sizing: border-box` app-wide, so the viewport's 1px
+    // border eats into the content box: clientHeight comes back short and the
+    // diagram (sized against `target`) overflows by a pixel or two. Add the
+    // shortfall back so the *content* box is exactly `target`, regardless of the
+    // inherited box-sizing.
+    const shortfall = target - this.viewport.clientHeight;
+    if (shortfall > 0) {
+      this.viewport.setCssStyles({ height: target + shortfall + "px" });
+    }
+  }
+
+  // The inline frame's height ceiling (70vh) — a fixed fraction of the window,
+  // not the live viewport height, so `fit` can contain a tall diagram against
+  // it without the chicken-and-egg of resizing the frame it is measuring.
+  _inlineMaxHeight() {
+    return Math.round(window.innerHeight * INLINE_MAX_VH);
   }
 
   // Default / "100%" view: actual size, anchored top-left.
@@ -383,23 +402,31 @@ class DiagramView {
     this._render(animate);
   }
 
-  // "Fit to frame": scale so the whole diagram fits, centered.
+  // "Fit to frame": scale so the whole diagram fits, centered. Inline, contain
+  // the diagram inside the frame width AND the 70vh height cap, then size the
+  // frame to that fitted height so the frame and the content match exactly —
+  // no vertical scroll, even for a tall (e.g. sequenceDiagram) shape. Full
+  // screen contains the diagram inside the overlay.
   fit(animate: boolean) {
-    this._setInlineHeight();
     const vw = this.viewport.clientWidth;
-    const vh = this.viewport.clientHeight;
-    if (!vw || !vh) return;
+    if (!vw) return;
 
     let s: number;
     if (this.fs) {
+      const vh = this.viewport.clientHeight;
+      if (!vh) return;
       // contain inside the overlay, never upscale past 1:1
       s = Math.min(vw / this.nat.w, vh / this.nat.h);
     } else {
-      // fit to width
-      s = vw / this.nat.w;
+      // contain inside the frame width and the 70vh height cap — the height
+      // term is what keeps a tall diagram from overflowing the frame.
+      s = Math.min(vw / this.nat.w, this._inlineMaxHeight() / this.nat.h);
     }
     s = clamp(Math.min(s, 1), this.minScale, this.maxScale);
     this.scale = s;
+    // Inline: size the frame to the fitted height (before centering, which
+    // reads the new height) so frame and content heights match.
+    if (!this.fs) this._setInlineHeight(s);
     this._center();
     this.viewMode = "fit";
     this.lastWidth = vw;
