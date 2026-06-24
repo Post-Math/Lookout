@@ -1,0 +1,30 @@
+{
+  "name": "lookout",
+  "version": "1.1.3",
+  "description": "Survey wide content instead of scrolling sideways — pan/zoom Mermaid diagrams and open wide tables full-screen in Obsidian.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "validate": "node scripts/validate.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "mermaid",
+    "diagram",
+    "table"
+  ],
+  "author": "Post-Math",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "^1.6.0",
+    "tslib": "^2.6.0",
+    "typescript": "^5.6.3"
+  }
+}

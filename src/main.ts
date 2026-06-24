@@ -5,54 +5,118 @@
  * and full screen. Tables: a full-screen button so wide tables can be read
  * without squinting through the note's horizontal scrollbar (no zoom).
  *
- * Plain CommonJS (no build step): Obsidian loads this file directly.
- * The visual language is a "drafting / survey instrument": Obsidian theme
- * surfaces with a single survey-cyan accent and a monospace zoom gauge.
+ * Authored in TypeScript; esbuild bundles this to main.js (see
+ * docs/DEVELOPMENT.md). The visual language is a "drafting / survey instrument":
+ * Obsidian theme surfaces with a single survey-cyan accent and a monospace gauge.
  */
 
-"use strict";
+import { Notice, Plugin } from "obsidian";
 
-const obsidian = require("obsidian");
-
-const PAD = 24;          // slack (px) so diagram edges can be panned just past the frame
+const PAD = 24; // slack (px) so diagram edges can be panned just past the frame
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
-const ZOOM_STEP = 1.2;   // per button press
+const ZOOM_STEP = 1.2; // per button press
 const INLINE_FLOOR = 56; // min inline frame height (px) — just enough for the toolbar
 
 /* ---- lucide-style icons, 1.75px stroke for a precise drafting feel ---- */
-const ICONS = {
-  minus: '<line x1="5" y1="12" x2="19" y2="12"/>',
-  plus: '<line x1="5" y1="12" x2="19" y2="12"/><line x1="12" y1="5" x2="12" y2="19"/>',
-  // "fit to frame": a frame with a horizontal double-arrow inside — distinct from the maximize glyph.
-  fit: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7.5 12h9"/><path d="M10 9.5 7.5 12l2.5 2.5"/><path d="M14 9.5 16.5 12 14 14.5"/>',
-  // "fullscreen": arrows pushing out to the four corners.
-  full: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
-  close: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
-};
+type IconChild = [tag: string, attrs: Record<string, string>];
 
-function svgIcon(name) {
-  return (
-    '<svg class="lookout-ico" viewBox="0 0 24 24" width="16" height="16" ' +
-    'fill="none" stroke="currentColor" stroke-width="1.75" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    ICONS[name] +
-    "</svg>"
-  );
+const ICONS = {
+  minus: [["line", { x1: "5", y1: "12", x2: "19", y2: "12" }]],
+  plus: [
+    ["line", { x1: "5", y1: "12", x2: "19", y2: "12" }],
+    ["line", { x1: "12", y1: "5", x2: "12", y2: "19" }],
+  ],
+  // "fit to frame": a frame with a horizontal double-arrow inside.
+  fit: [
+    ["rect", { x: "3", y: "5", width: "18", height: "14", rx: "2" }],
+    ["path", { d: "M7.5 12h9" }],
+    ["path", { d: "M10 9.5 7.5 12l2.5 2.5" }],
+    ["path", { d: "M14 9.5 16.5 12 14 14.5" }],
+  ],
+  // "fullscreen": arrows pushing out to the four corners.
+  full: [
+    ["path", { d: "M8 3H5a2 2 0 0 0-2 2v3" }],
+    ["path", { d: "M21 8V5a2 2 0 0 0-2-2h-3" }],
+    ["path", { d: "M3 16v3a2 2 0 0 0 2 2h3" }],
+    ["path", { d: "M16 21h3a2 2 0 0 0 2-2v-3" }],
+  ],
+  close: [
+    ["line", { x1: "18", y1: "6", x2: "6", y2: "18" }],
+    ["line", { x1: "6", y1: "6", x2: "18", y2: "18" }],
+  ],
+} satisfies Record<string, IconChild[]>;
+
+type IconName = keyof typeof ICONS;
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * Build one of the {@link ICONS} glyphs as a sized, theme-coloured `<svg>`
+ * element. Constructed via the DOM (no `innerHTML`), per Obsidian's guidelines.
+ */
+function svgIcon(name: IconName): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  const attrs: Record<string, string> = {
+    class: "lookout-ico",
+    viewBox: "0 0 24 24",
+    width: "16",
+    height: "16",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "1.75",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  };
+  for (const [k, v] of Object.entries(attrs)) svg.setAttribute(k, v);
+  for (const [tag, childAttrs] of ICONS[name]) {
+    const child = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(childAttrs)) child.setAttribute(k, v);
+    svg.appendChild(child);
+  }
+  return svg;
 }
 
-function el(tag, cls) {
+/** Create an element with an optional class. Tag-typed so callers keep `.type`, `.disabled`, … */
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  cls?: string
+): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   if (cls) node.className = cls;
   return node;
 }
 
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+/** Clamp `v` into the inclusive `[lo, hi]` range. */
+const clamp = (v: number, lo: number, hi: number): number =>
+  Math.min(hi, Math.max(lo, v));
 
 const REDUCED_MOTION =
   typeof window !== "undefined" &&
-  window.matchMedia &&
+  !!window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+type ViewMode = "actual" | "fit" | "free";
+
+interface DragState {
+  id: number;
+  sx: number;
+  sy: number;
+  tx: number;
+  ty: number;
+}
+
+interface DiagramViewOptions {
+  /** true for the full-screen clone, false/absent for the inline frame */
+  fullscreen?: boolean;
+  /** called when a full-screen view closes */
+  onClose?: (() => void) | null;
+  /** inline: the svg's original parent element */
+  parent?: HTMLElement | null;
+  /** inline: node to insert the viewport before */
+  anchor?: Node | null;
+}
 
 /**
  * One pan/zoom controller around a single Mermaid <svg>.
@@ -60,13 +124,47 @@ const REDUCED_MOTION =
  * (wraps a clone inside a fixed overlay).
  */
 class DiagramView {
-  constructor(svg, options) {
-    options = options || {};
+  svg: SVGSVGElement;
+  fs: boolean;
+  onClose: (() => void) | null;
+  parent: HTMLElement | null;
+  anchor: Node | null;
+  host: Element | null;
+
+  scale: number;
+  tx: number;
+  ty: number;
+  minScale: number;
+  maxScale: number;
+  viewMode: ViewMode;
+  lastWidth: number;
+
+  drag: DragState | null;
+  destroyed: boolean;
+
+  nat!: { w: number; h: number };
+  stage!: HTMLDivElement;
+  viewport!: HTMLDivElement;
+  overlay?: HTMLDivElement;
+  toolbar!: HTMLDivElement;
+  btnOut!: HTMLButtonElement;
+  btnIn!: HTMLButtonElement;
+  btnFit!: HTMLButtonElement;
+  gauge!: HTMLButtonElement;
+  gaugeNum!: HTMLSpanElement;
+  gaugeTrack!: HTMLSpanElement;
+  gaugeFill!: HTMLSpanElement;
+  ro?: ResizeObserver;
+  _animTimer?: number;
+  _fsView: DiagramView | null = null;
+
+  constructor(svg: SVGSVGElement, options: DiagramViewOptions = {}) {
     this.svg = svg;
     this.fs = !!options.fullscreen;
     this.onClose = options.onClose || null;
-    this.parent = options.parent || null;   // inline: original parent of the svg
-    this.anchor = options.anchor || null;    // inline: node to insert the viewport before
+    this.parent = options.parent || null; // inline: original parent of the svg
+    this.anchor = options.anchor || null; // inline: node to insert the viewport before
+    this.host = null; // inline: the .mermaid wrapper we neutralize
 
     this.scale = 1;
     this.tx = 0;
@@ -136,7 +234,10 @@ class DiagramView {
     );
     this.viewport.tabIndex = 0;
     this.viewport.setAttribute("role", "group");
-    this.viewport.setAttribute("aria-label", "Mermaid 다이어그램 — 드래그/스크롤로 이동, Ctrl+스크롤로 확대");
+    this.viewport.setAttribute(
+      "aria-label",
+      "Mermaid 다이어그램 — 드래그/스크롤로 이동, Ctrl+스크롤로 확대"
+    );
 
     this.stage.appendChild(this.svg);
     this.viewport.appendChild(this.stage);
@@ -147,8 +248,15 @@ class DiagramView {
       document.body.appendChild(this.overlay);
     } else {
       // svg has been moved into the stage; place the viewport where it used to be.
-      this.parent.classList.add("lookout-host");
-      this.parent.insertBefore(this.viewport, this.anchor);
+      // The clamp/center styles live on Obsidian's `.mermaid` wrapper, which is
+      // usually the svg's direct parent but can be an ancestor (the svg may be
+      // nested, or caught only by its `mermaid-*` id). Stamp whichever element
+      // actually carries `.mermaid` so `.mermaid.lookout-host` always matches;
+      // fall back to the parent when there is no `.mermaid` (nothing to clamp).
+      const parent = this.parent!;
+      this.host = parent.closest(".mermaid") || parent;
+      this.host.classList.add("lookout-host");
+      parent.insertBefore(this.viewport, this.anchor);
     }
 
     this._buildToolbar();
@@ -159,13 +267,21 @@ class DiagramView {
   }
 
   _buildToolbar() {
-    const bar = el("div", "lookout-toolbar" + (this.fs ? " lookout-toolbar--fs" : ""));
+    const bar = el(
+      "div",
+      "lookout-toolbar" + (this.fs ? " lookout-toolbar--fs" : "")
+    );
     bar.setAttribute("role", "toolbar");
 
-    const mkBtn = (icon, label, handler, extraCls) => {
+    const mkBtn = (
+      icon: IconName,
+      label: string,
+      handler: () => void,
+      extraCls?: string
+    ): HTMLButtonElement => {
       const b = el("button", "lookout-btn" + (extraCls ? " " + extraCls : ""));
       b.type = "button";
-      b.innerHTML = svgIcon(icon);
+      b.appendChild(svgIcon(icon));
       b.setAttribute("aria-label", label);
       b.title = label;
       b.addEventListener("click", (e) => {
@@ -234,8 +350,7 @@ class DiagramView {
     }
   }
 
-  _scheduleInitialView(tries) {
-    tries = tries || 0;
+  _scheduleInitialView(tries = 0) {
     requestAnimationFrame(() => {
       if (this.destroyed) return;
       if (this.viewport.clientWidth > 0) {
@@ -263,7 +378,7 @@ class DiagramView {
   }
 
   // Default / "100%" view: actual size, anchored top-left.
-  actualSize(animate) {
+  actualSize(animate: boolean) {
     this._setInlineHeight();
     const vw = this.viewport.clientWidth;
     if (!vw) return;
@@ -277,13 +392,13 @@ class DiagramView {
   }
 
   // "Fit to frame": scale so the whole diagram fits, centered.
-  fit(animate) {
+  fit(animate: boolean) {
     this._setInlineHeight();
     const vw = this.viewport.clientWidth;
     const vh = this.viewport.clientHeight;
     if (!vw || !vh) return;
 
-    let s;
+    let s: number;
     if (this.fs) {
       // contain inside the overlay, never upscale past 1:1
       s = Math.min(vw / this.nat.w, vh / this.nat.h);
@@ -314,7 +429,7 @@ class DiagramView {
     const vh = this.viewport.clientHeight;
     const cw = this.nat.w * this.scale;
     const ch = this.nat.h * this.scale;
-    let txMin, txMax, tyMin, tyMax;
+    let txMin: number, txMax: number, tyMin: number, tyMax: number;
     if (cw <= vw) {
       txMin = txMax = (vw - cw) / 2;
     } else {
@@ -337,7 +452,7 @@ class DiagramView {
   }
 
   /* ---------- zoom ---------- */
-  zoomTo(newScale, cx, cy, animate) {
+  zoomTo(newScale: number, cx: number, cy: number, animate: boolean) {
     newScale = clamp(newScale, this.minScale, this.maxScale);
     const k = newScale / this.scale;
     this.tx = cx - (cx - this.tx) * k;
@@ -347,7 +462,7 @@ class DiagramView {
     this._render(animate);
   }
 
-  zoomBy(factor) {
+  zoomBy(factor: number) {
     this.viewMode = "free";
     this.zoomTo(
       this.scale * factor,
@@ -358,7 +473,7 @@ class DiagramView {
   }
 
   /* ---------- input handlers ---------- */
-  onWheel(e) {
+  onWheel(e: WheelEvent) {
     const rect = this.viewport.getBoundingClientRect();
 
     if (e.ctrlKey || e.metaKey) {
@@ -402,9 +517,10 @@ class DiagramView {
     }
   }
 
-  onPointerDown(e) {
+  onPointerDown(e: PointerEvent) {
     if (e.button !== 0) return;
-    if (e.target.closest && e.target.closest(".lookout-toolbar")) return;
+    const target = e.target as Element | null;
+    if (target && target.closest(".lookout-toolbar")) return;
     this.drag = {
       id: e.pointerId,
       sx: e.clientX,
@@ -423,7 +539,7 @@ class DiagramView {
     this.viewport.addEventListener("pointercancel", this.onPointerUp);
   }
 
-  onPointerMove(e) {
+  onPointerMove(e: PointerEvent) {
     if (!this.drag || e.pointerId !== this.drag.id) return;
     this.viewMode = "free";
     this.tx = this.drag.tx + (e.clientX - this.drag.sx);
@@ -432,7 +548,7 @@ class DiagramView {
     this._render(false);
   }
 
-  onPointerUp(e) {
+  onPointerUp(e: PointerEvent) {
     if (!this.drag) return;
     this.viewport.classList.remove("is-dragging");
     try {
@@ -446,7 +562,7 @@ class DiagramView {
     this.drag = null;
   }
 
-  onKeyDown(e) {
+  onKeyDown(e: KeyboardEvent) {
     // Full-screen Esc is captured at document level.
     if (this.fs && e.key === "Escape") {
       e.preventDefault();
@@ -499,7 +615,7 @@ class DiagramView {
     }
   }
 
-  _nudge(dx, dy) {
+  _nudge(dx: number, dy: number) {
     this.viewMode = "free";
     this.tx += dx;
     this.ty += dy;
@@ -525,7 +641,7 @@ class DiagramView {
   }
 
   /* ---------- render ---------- */
-  _render(animate) {
+  _render(animate: boolean) {
     if (animate && !REDUCED_MOTION) {
       this.stage.classList.add("is-animating");
       window.clearTimeout(this._animTimer);
@@ -553,7 +669,7 @@ class DiagramView {
   /* ---------- full-screen ---------- */
   openFullscreen() {
     if (this._fsView) return;
-    const clone = this.svg.cloneNode(true);
+    const clone = this.svg.cloneNode(true) as SVGSVGElement;
     clone.style.width = "";
     clone.style.height = "";
     clone.style.maxWidth = "";
@@ -592,9 +708,16 @@ class DiagramView {
     if (this.parent && this.viewport.parentElement === this.parent) {
       this.parent.insertBefore(this.svg, this.viewport);
       this.viewport.remove();
-      this.parent.classList.remove("lookout-host");
+      if (this.host) this.host.classList.remove("lookout-host");
     }
   }
+}
+
+interface TableViewOptions {
+  /** the table's original parent element */
+  parent: HTMLElement;
+  /** node to insert the host before */
+  anchor: Node | null;
 }
 
 /**
@@ -605,8 +728,15 @@ class DiagramView {
  * than in the note's narrow reading column.
  */
 class TableView {
-  constructor(table, options) {
-    options = options || {};
+  table: HTMLTableElement;
+  parent: HTMLElement;
+  anchor: Node | null;
+  destroyed: boolean;
+  host!: HTMLDivElement;
+  scroll!: HTMLDivElement;
+  overlay: HTMLDivElement | null = null;
+
+  constructor(table: HTMLTableElement, options: TableViewOptions) {
     this.table = table;
     this.parent = options.parent;
     this.anchor = options.anchor;
@@ -626,7 +756,7 @@ class TableView {
 
     const btn = el("button", "lookout-btn lookout-table-btn");
     btn.type = "button";
-    btn.innerHTML = svgIcon("full");
+    btn.appendChild(svgIcon("full"));
     btn.setAttribute("aria-label", "표를 전체 화면으로 보기");
     btn.title = "전체 화면으로 보기";
     btn.addEventListener("click", (e) => {
@@ -639,33 +769,34 @@ class TableView {
 
   openFullscreen() {
     if (this.overlay) return;
-    this.overlay = el("div", "lookout-fs lookout-fs--table");
+    const overlay = el("div", "lookout-fs lookout-fs--table");
+    this.overlay = overlay;
 
     const scroll = el("div", "lookout-table-fs-scroll");
-    const clone = this.table.cloneNode(true);
+    const clone = this.table.cloneNode(true) as HTMLTableElement;
     clone.classList.add("lookout-table-fs-table");
     scroll.appendChild(clone);
-    this.overlay.appendChild(scroll);
+    overlay.appendChild(scroll);
 
     const close = el("button", "lookout-btn lookout-fs-close");
     close.type = "button";
-    close.innerHTML = svgIcon("close");
+    close.appendChild(svgIcon("close"));
     close.setAttribute("aria-label", "닫기");
     close.title = "닫기 (Esc)";
     close.addEventListener("click", this.onCloseFs);
-    this.overlay.appendChild(close);
+    overlay.appendChild(close);
 
     // Click on the empty backdrop (not the table) closes the view.
-    this.overlay.addEventListener("pointerdown", (e) => {
-      if (e.target === this.overlay || e.target === scroll) this.onCloseFs();
+    overlay.addEventListener("pointerdown", (e) => {
+      if (e.target === overlay || e.target === scroll) this.onCloseFs();
     });
 
-    document.body.appendChild(this.overlay);
+    document.body.appendChild(overlay);
     document.addEventListener("keydown", this.onFsKeyDown, true);
     close.focus({ preventScroll: true });
   }
 
-  onFsKeyDown(e) {
+  onFsKeyDown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
       this.onCloseFs();
@@ -696,7 +827,11 @@ class TableView {
  * ===================================================================== */
 const PROCESSED = "data-lookout";
 
-module.exports = class LookoutPlugin extends obsidian.Plugin {
+export default class LookoutPlugin extends Plugin {
+  views!: Set<DiagramView | TableView>;
+  observer?: MutationObserver;
+  private _scanQueued = false;
+
   onload() {
     this.views = new Set();
     this._scanQueued = false;
@@ -715,7 +850,7 @@ module.exports = class LookoutPlugin extends obsidian.Plugin {
     // Mermaid renders asynchronously; catch svgs as they appear.
     this.observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
-        for (const node of m.addedNodes) {
+        for (const node of Array.from(m.addedNodes)) {
           if (node instanceof HTMLElement || node instanceof SVGElement) {
             this.queueScan();
             return;
@@ -755,15 +890,17 @@ module.exports = class LookoutPlugin extends obsidian.Plugin {
     this.scanWithin(document.body);
   }
 
-  scanWithin(root) {
+  scanWithin(root: ParentNode | null) {
     if (!root || !root.querySelectorAll) return;
-    const svgs = root.querySelectorAll('.mermaid svg, svg[id^="mermaid-"]');
+    const svgs = root.querySelectorAll<SVGSVGElement>(
+      '.mermaid svg, svg[id^="mermaid-"]'
+    );
     svgs.forEach((svg) => this.process(svg));
     const tables = root.querySelectorAll("table");
     tables.forEach((table) => this.processTable(table));
   }
 
-  process(svg) {
+  process(svg: SVGSVGElement) {
     if (svg.hasAttribute(PROCESSED)) return;
     if (svg.closest(".lookout-viewport") || svg.closest(".lookout-fs")) return;
     const parent = svg.parentElement;
@@ -780,7 +917,7 @@ module.exports = class LookoutPlugin extends obsidian.Plugin {
     this.views.add(view);
   }
 
-  processTable(table) {
+  processTable(table: HTMLTableElement) {
     if (table.hasAttribute(PROCESSED)) return;
     if (table.closest(".lookout-table-host") || table.closest(".lookout-fs")) return;
     // Enhance rendered tables in a note — both reading view (.markdown-rendered)
@@ -801,11 +938,16 @@ module.exports = class LookoutPlugin extends obsidian.Plugin {
   }
 
   fullscreenFirst() {
-    const view = [...this.views].find((v) => !v.fs && document.body.contains(v.viewport));
+    const view = [...this.views].find(
+      (v): v is DiagramView =>
+        v instanceof DiagramView &&
+        !v.fs &&
+        document.body.contains(v.viewport)
+    );
     if (view) {
       view.openFullscreen();
     } else {
-      new obsidian.Notice("이 노트에서 Mermaid 다이어그램을 찾지 못했습니다.");
+      new Notice("이 노트에서 Mermaid 다이어그램을 찾지 못했습니다.");
     }
   }
-};
+}

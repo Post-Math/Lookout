@@ -16,10 +16,19 @@
 
 /* The host (Obsidian's .mermaid wrapper) should no longer clamp or scroll. */
 .lookout-host {
-  overflow: visible !important;
   width: 100%;
   max-width: 100%;
   text-align: left;
+}
+
+/*
+ * Obsidian's `.mermaid` wrapper sets `overflow` to clamp/scroll the diagram.
+ * The plugin stamps `.lookout-host` onto that `.mermaid` element (via
+ * `closest('.mermaid')`), so qualifying with `.mermaid` here adds our own class
+ * on top of Obsidian's `.mermaid` — enough specificity to win without `!important`.
+ */
+.mermaid.lookout-host {
+  overflow: visible;
 }
 
 /* ---------- viewport (the windowed frame over the diagram) ---------- */
@@ -299,10 +308,14 @@
   justify-content: safe center; /* center small tables, scroll wide ones from the left */
 }
 
-.lookout-table-fs-table {
-  margin: 0 !important;
-  width: auto !important;
-  max-width: none !important;
+/*
+ * Scope under the scroll container so this two-class selector outranks
+ * Obsidian's single-class table styles — overriding them without !important.
+ */
+.lookout-table-fs-scroll .lookout-table-fs-table {
+  margin: 0;
+  width: auto;
+  max-width: none;
   height: max-content;
 }
 
