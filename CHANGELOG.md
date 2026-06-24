@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-06-24
+
+### Fixed
+
+- "Fit to frame" on an inline Mermaid diagram no longer leaves a vertical scroll
+  or dead space. Previously fit scaled the diagram to the frame **width** while
+  the frame height stayed at the diagram's 100% height, so the frame and the
+  content heights did not match: a tall diagram (e.g. a long `sequenceDiagram`)
+  overflowed and scrolled, and a wide one had dead space above/below. Fit now
+  contains the diagram within both the frame width and the 70vh height cap and
+  sizes the frame to that fitted height, so frame and content match exactly. The
+  default inline view stays at 100% (actual size); fit and full screen are how a
+  tall diagram is seen whole.
+- The fitted frame height is now exact under Obsidian's app-wide
+  `box-sizing: border-box`. The viewport's 1px border had been eating into the
+  content box, leaving the diagram 1–2px taller than the frame — a faint
+  vertical scroll visible in Obsidian but not in a `content-box` test harness.
+  The frame now compensates for the border so the content box matches the
+  fitted diagram precisely.
+
 ## [1.1.6] - 2026-06-24
 
 ### Fixed
