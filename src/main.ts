@@ -775,7 +775,12 @@ class TableView {
     const scroll = el("div", "lookout-table-fs-scroll");
     const clone = this.table.cloneNode(true) as HTMLTableElement;
     clone.classList.add("lookout-table-fs-table");
-    scroll.appendChild(clone);
+    // The clone lives outside the note, so Obsidian's table styling (borders,
+    // padding, header) — which is scoped to `.markdown-rendered` — would not
+    // reach it. Wrap it in that context so full screen matches the inline view.
+    const mdContext = el("div", "markdown-rendered");
+    mdContext.appendChild(clone);
+    scroll.appendChild(mdContext);
     overlay.appendChild(scroll);
 
     const close = el("button", "lookout-btn lookout-fs-close");

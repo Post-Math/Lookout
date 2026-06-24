@@ -309,6 +309,16 @@
 }
 
 /*
+ * The full-screen clone is wrapped in a `.markdown-rendered` context so it
+ * inherits the theme's table styling (matching the inline view). `display:
+ * contents` removes the wrapper's own box, keeping the centering/scroll layout
+ * on the table itself.
+ */
+.lookout-table-fs-scroll > .markdown-rendered {
+  display: contents;
+}
+
+/*
  * Scope under the scroll container so this two-class selector outranks
  * Obsidian's single-class table styles — overriding them without !important.
  */

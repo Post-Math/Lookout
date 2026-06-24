@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Full-screen tables now match the inline view's styling. The clone is opened
+  outside the note's `.markdown-rendered` context, which dropped the theme's
+  table borders/padding/header background; it is now re-wrapped in that context
+  (with `display: contents` so the centering/scroll layout is unchanged).
 - Diagram host overflow is now neutralized on the actual `.mermaid` wrapper (via
   `closest('.mermaid')`), so the override applies even when the diagram svg is
   nested or matched only by its `mermaid-*` id. No user-visible change in the
@@ -25,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change to the shipped plugin's behavior.
 - Followed Obsidian's code guidelines: icons are now built via the DOM
   (`createElementNS`) instead of `innerHTML`.
+- Added a headless-browser E2E test (`tests/e2e/`, `npm run test:e2e`) that
+  drives the bundled plugin and guards the full-screen table styling.
 - Restructured docs: `README.md` is now user-facing; developer setup and
   architecture moved to `docs/DEVELOPMENT.md`.
 

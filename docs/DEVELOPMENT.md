@@ -28,6 +28,7 @@ esbuild.config.mjs   # bundles src/main.ts -> main.js (dev watch / production)
 tsconfig.json        # type-check config (strict, noEmit)
 package.json         # dev dependencies + scripts
 scripts/validate.mjs # manifest/versions consistency + required-files check
+tests/e2e/           # headless-browser E2E (drives the built main.js)
 docs/                # developer docs + README images
 main.js              # BUILD OUTPUT (gitignored) — do not edit
 ```
@@ -61,6 +62,7 @@ npm run dev         # esbuild watch build (development)
 npm run build       # tsc --noEmit (type-check) + esbuild production bundle
 npm run typecheck   # tsc --noEmit only
 npm run validate    # manifest/versions consistency + required-files check
+npm run test:e2e    # headless browser E2E (see below) — run after `npm run build`
 ```
 
 CI (and a pre-PR check) runs, on Node 20:
@@ -72,7 +74,25 @@ node --check main.js
 node scripts/validate.mjs
 ```
 
-There are no unit tests — behavioural verification is manual in a vault.
+There are no unit tests, but there is a headless-browser **E2E** check (see
+below). Beyond that, behavioural verification is manual in a vault.
+
+### E2E tests
+
+`tests/e2e/` drives the **real bundled `main.js`** in headless Chromium under a
+tiny `obsidian` stub, then asserts rendered behavior. `table-fullscreen.test.mjs`
+guards a real regression: the full-screen table must inherit the same theme
+styling and layout as the inline view (it lives outside the note's
+`.markdown-rendered` context, so the clone is re-wrapped in one).
+
+```bash
+npx playwright install chromium   # one-time (or set CHROMIUM_PATH to a binary)
+npm run build                     # the test loads the built main.js
+npm run test:e2e
+```
+
+It is not part of the CI `validate` job (no browser there); run it locally when
+touching the view/teardown/DOM code or `styles.css`.
 
 ### Type-checking
 
