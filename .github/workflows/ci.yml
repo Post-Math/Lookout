@@ -25,8 +25,15 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "20"
+          cache: "npm"
 
-      - name: Syntax-check plugin source
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check & build (tsc --noEmit + esbuild)
+        run: npm run build
+
+      - name: Syntax-check bundled output
         run: node --check main.js
 
       - name: Validate manifest, versions & required files

@@ -1,6 +1,7 @@
 // Lightweight, dependency-free repo validation for CI.
 // Checks required files exist, manifest.json / versions.json are valid and
-// mutually consistent, and the version looks like x.y.z. No build step.
+// mutually consistent, and the version looks like x.y.z. Run AFTER the build
+// (`npm run build`) so the bundled main.js exists.
 
 import { readFileSync, existsSync } from "node:fs";
 
