@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-06-24
+
 ### Fixed
 
 - Wide tables: the full-screen button no longer floats off-screen at the table's
