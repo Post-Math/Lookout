@@ -248,18 +248,28 @@
 }
 
 /* ---------- tables (full-screen only, no zoom) ---------- */
+/*
+ * The host is a 1x1 grid; the scroller and the button share that single cell
+ * (they overlay). `minmax(0, 1fr)` + the scroller's `min-width: 0` cap the host
+ * at the available column width so it never balloons to the table's intrinsic
+ * width — even when an ancestor is a shrink-to-fit / horizontally-scrolling
+ * block (Obsidian's `.cm-table-widget`). That keeps the table's overflow inside
+ * our own scroller and the button pinned to the *visible* corner instead of
+ * floating off-screen at the table's far-right edge.
+ */
 .lookout-table-host {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   width: 100%;
   max-width: 100%;
 }
 
-/* Keep the table's horizontal scroll inside our own wrapper so the button
-   can stay pinned to the visible corner instead of scrolling away. */
 .lookout-table-scroll {
+  grid-area: 1 / 1;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  max-width: 100%;
 }
 
 .lookout-table-scroll > table {
@@ -269,7 +279,12 @@
 }
 
 .lookout-table-btn {
-  position: absolute;
+  grid-area: 1 / 1;
+  justify-self: end;
+  align-self: start;
+  /* `sticky` keeps the button in view should any ancestor still scroll the
+     whole host horizontally; the grid alignment fixes it to the top-right. */
+  position: sticky;
   top: 6px;
   right: 6px;
   z-index: 2;
