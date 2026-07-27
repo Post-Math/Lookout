@@ -47,6 +47,36 @@
           <tr><td>4</td><td>five</td><td>six</td></tr>
         </tbody>
       </table>
+
+      <!--
+        Second table: a narrow one carrying an inline-footnote marker, plus the
+        note's rendered definition list. Exercises the full-screen footnote
+        section — in particular that its text is laid out at a readable measure
+        rather than at the narrow table's own width.
+
+        The markup below mirrors Obsidian's own renderer exactly: the `<sup>`
+        and the definition `<li>` carry `data-footnote-id` and *no* `id`, the
+        anchors carry only the `#fn-…`/`#fnref-…` href, and the marker's href
+        names the definition's `data-footnote-id`. Keep it that way — resolving
+        a marker to its definition depends on that pairing.
+      -->
+      <table id="fn-table">
+        <thead>
+          <tr><th>A</th><th>B</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>x<sup class="footnote-ref" data-footnote-id="fnref-1"><a href="#fn-1" class="footnote-link">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+      <section class="footnotes">
+        <hr>
+        <ol>
+          <li data-footnote-id="fn-1">A perfectly ordinary one-sentence inline footnote. <a href="#fnref-1" class="footnote-backref footnote-link">↩︎</a></li>
+        </ol>
+      </section>
     </div>
   </body>
 </html>

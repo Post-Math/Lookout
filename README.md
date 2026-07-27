@@ -43,6 +43,13 @@ button (no zoom) pinned to the visible top-right corner. Full screen shows the
 table in a maximized scroll area where its full width fits far better than in the
 note's narrow reading column.
 
+If a cell carries a **footnote** — inline (`^[note]`) or referenced (`[^1]`) —
+its definition is carried into full screen and listed under the table, and the
+marker jumps to it (and the "↩︎" back-reference jumps back) without leaving the
+full-screen view. Where the note itself cannot render a definition — Live
+Preview, which renders a table in isolation — the marker stays visible but
+inert, exactly as it reads in the note.
+
 Tables are enhanced in both **Reading view** and **Live Preview**; the table you
 are actively editing is left untouched.
 

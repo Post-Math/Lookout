@@ -64,9 +64,9 @@ try {
   await page.addStyleTag({ content: STYLES });
   await page.addScriptTag({ content: bootstrap });
 
-  // The plugin enhanced the table on load; open it full screen.
+  // The plugin enhanced the tables on load; open the first one full screen.
   await page.waitForSelector(".lookout-table-btn");
-  await page.click(".lookout-table-btn", { force: true });
+  await page.locator(".lookout-table-btn").first().click({ force: true });
   await page.waitForSelector(".lookout-table-fs-table");
 
   const r = await page.evaluate(() => {
@@ -106,6 +106,67 @@ try {
   check("override styles intact (margin 0, max-width none)", r.overrideMargin === "0px" && r.overrideMaxWidth === "none", `margin=${r.overrideMargin} maxWidth=${r.overrideMaxWidth}`);
   check("full-screen table is visible", r.tableVisible);
   check("small table stays centered", Math.abs(r.leftGap - r.rightGap) <= 2, `gaps ${r.leftGap}/${r.rightGap}`);
+
+  // ---- Footnotes: the second (narrow) table carries an inline-footnote marker.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".lookout-fs", { state: "detached" });
+  await page.locator(".lookout-table-btn").nth(1).click({ force: true });
+  await page.waitForSelector(".lookout-fs-footnotes li");
+
+  const f = await page.evaluate(() => {
+    const box = (el) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height) };
+    };
+    const noteLi = document.querySelector(".markdown-rendered > .footnotes li");
+    const fsLi = document.querySelector(".lookout-fs-footnotes li");
+    const fsTable = document.querySelector(".lookout-table-fs-table");
+    const sc = document.querySelector(".lookout-table-fs-scroll");
+    const tb = fsTable.getBoundingClientRect();
+    const sb = sc.getBoundingClientRect();
+    return {
+      noteLi: box(noteLi),
+      fsLi: box(fsLi),
+      fsTableWidth: Math.round(tb.width),
+      leftGap: Math.round(tb.left - sb.left),
+      rightGap: Math.round(sb.right - tb.right),
+      // The definition text must survive the clone.
+      fsText: (fsLi?.textContent || "").trim().slice(0, 20),
+      markerHref: document
+        .querySelector(".lookout-table-fs-table a.footnote-link")
+        ?.getAttribute("href"),
+      // The clone must never mint an id the note already uses.
+      dupeIds: (() => {
+        const seen = new Set();
+        const dupes = [];
+        for (const node of document.querySelectorAll("[id]")) {
+          if (seen.has(node.id)) dupes.push(node.id);
+          seen.add(node.id);
+        }
+        return dupes;
+      })(),
+      // The note's own definition is Obsidian-owned: read, never rewritten.
+      noteLiUntouched:
+        !!noteLi &&
+        !noteLi.id &&
+        noteLi.getAttribute("data-footnote-id") === "fn-1",
+    };
+  });
+
+  check("footnote definition is carried into full screen", f.fsText.startsWith("A perfectly ordinary"), `text="${f.fsText}"`);
+  check("footnote marker points at an overlay-local anchor", !!f.markerHref?.startsWith("#lookout-fs-"), `href=${f.markerHref}`);
+  // The regression this guards: sizing the section to the narrow table's own
+  // width squeezed the text into a one-word-per-line ribbon.
+  check(
+    "footnote text reads at a note-like measure, not the table's width",
+    f.fsLi.w >= Math.min(f.noteLi.w, 400) && f.fsLi.w > f.fsTableWidth * 2,
+    `note=${f.noteLi.w}x${f.noteLi.h} fs=${f.fsLi.w}x${f.fsLi.h} table=${f.fsTableWidth}`
+  );
+  check("footnote text is not stacked into a sliver", f.fsLi.h <= f.noteLi.h * 2, `note h=${f.noteLi.h} fs h=${f.fsLi.h}`);
+  check("narrow table with footnotes stays centered", Math.abs(f.leftGap - f.rightGap) <= 2, `gaps ${f.leftGap}/${f.rightGap}`);
+  check("no duplicate ids introduced by the clone", f.dupeIds.length === 0, `dupes=${f.dupeIds.join(",")}`);
+  check("the note's own footnote definition is left untouched", f.noteLiUntouched);
 } finally {
   await browser.close();
 }

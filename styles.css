@@ -336,6 +336,72 @@
   height: max-content;
 }
 
+/*
+ * The full-screen table together with its footnote definitions. This wrapper
+ * only exists when at least one footnote resolves; otherwise the table stays
+ * the scroll container's single flex child exactly as before.
+ *
+ * Its width drives the footnote measure, so it must not simply hug the table:
+ *  - `width: max-content` lets it span a table *wider* than the viewport, so
+ *    the footnotes stay aligned with the table while panning right (it is
+ *    deliberately not capped at `max-width: 100%`, which would stop the section
+ *    and its divider at the viewport edge);
+ *  - `min-width` gives it a readable floor, so a *narrow* table cannot squeeze
+ *    the footnote text into a one-word-per-line ribbon — the note renders that
+ *    same text at full note width.
+ * The table is centered within that floor, so the container's
+ * `justify-content: safe center` still centers small tables as before.
+ */
+.lookout-table-fs-scroll .lookout-fs-doc {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  /* flex-shrink would otherwise clamp a wide wrapper back to the viewport. */
+  flex: none;
+  width: max-content;
+  min-width: min(100%, 60ch);
+}
+
+/*
+ * `width: 0` + `min-width: 100%` makes the section fill the wrapper without
+ * contributing to its max-content width — a long footnote must not widen (and
+ * so off-center) the table above it. Same two-class-under-container trick as
+ * the table rule above: enough specificity to outrank the theme's bare
+ * `.footnotes` styles without !important.
+ */
+.lookout-table-fs-scroll .lookout-fs-footnotes {
+  width: 0;
+  min-width: 100%;
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.lookout-table-fs-scroll .lookout-fs-footnotes ol {
+  margin: 0;
+  padding-inline-start: 1.6em;
+}
+
+.lookout-table-fs-scroll .lookout-fs-footnotes li {
+  scroll-margin-top: 72px; /* clear the fixed close button when jumped to */
+  outline: none; /* focused programmatically on jump, never via Tab */
+}
+
+.lookout-table-fs-scroll .is-lookout-target {
+  background-color: color-mix(in srgb, var(--lookout-accent) 14%, transparent);
+  border-radius: 4px;
+  transition: background-color 0.18s ease;
+}
+
+/* A marker whose definition could not be resolved: visible, but plainly inert. */
+.lookout-table-fs-scroll .lookout-fn-unresolved {
+  color: var(--text-muted);
+  cursor: default;
+  text-decoration: none;
+}
+
 .lookout-fs-close {
   position: fixed;
   top: 16px;
@@ -362,5 +428,8 @@
   }
   .lookout-fs {
     animation: none;
+  }
+  .lookout-table-fs-scroll .is-lookout-target {
+    transition: none;
   }
 }

@@ -747,6 +747,67 @@ interface TableViewOptions {
 const TABLE_EDITOR_CHROME =
   ".table-col-btn, .table-row-btn, .table-col-drag-handle, .table-row-drag-handle";
 
+/*
+ * Footnotes in the full-screen table clone.
+ *
+ * The clone lives outside the note's rendered container, so everything the
+ * footnote mechanism relies on beyond the <table> subtree — the note's
+ * `.footnotes` definition list, Obsidian's own scoped click handlers, the
+ * `#fn-…`/`#fnref-…` id anchors — is unreachable from the overlay. We therefore
+ * clone the *definitions* in next to the table and re-point every footnote id
+ * and `#`-href at overlay-local copies. Everything below feeds that.
+ */
+
+/** A footnote reference marker inside a cell — never the definition's back-ref. */
+const FN_REF = 'a.footnote-link:not(.footnote-backref)[href^="#"]';
+/** Every footnote anchor in the overlay (refs *and* back-refs) needs re-pointing. */
+const FN_ANCHOR = 'a.footnote-link[href^="#"]';
+/**
+ * The note's rendered definitions. Reading view only: in Live Preview the table
+ * widget renders its slice in isolation and no definition list exists anywhere
+ * in the DOM, so this legitimately finds nothing (see the degradation path in
+ * `_buildFootnotes`).
+ */
+const FN_DEF = ".footnotes li";
+/**
+ * Nodes carrying a footnote identity that must be re-namespaced on the clone.
+ * Deliberately narrow — a blanket id rewrite would also hit `url(#…)` /
+ * `clip-path` targets inside any SVG a cell happens to contain.
+ *
+ * Obsidian itself stamps `data-footnote-id` on the `<sup class="footnote-ref">`
+ * and on the definition `<li>` — never on the anchors, which carry only the
+ * `#fn-…`/`#fnref-…` href. Anchors are nevertheless excluded here: should a
+ * renderer stamp one, the marker and its containing `<sup>` would mint the same
+ * id twice (invalid DOM) and, since the jump map is built in document order,
+ * the map would point at the nested "↩︎" glyph instead of the definition.
+ * Anchors are re-pointed by the FN_ANCHOR pass below instead.
+ */
+const FN_IDENTIFIED =
+  "[data-footnote-id]:not(a), .footnotes li[id], sup.footnote-ref[id]";
+/**
+ * Lookout's own chrome, for the case where a cloned footnote definition happens
+ * to contain an already-processed table or diagram. Buttons/toolbars in a clone
+ * are dead (their listeners belong to the live view), so they are removed; the
+ * wrappers are unwrapped so the content inside them survives as plain markup.
+ */
+const LOOKOUT_CHROME = ".lookout-btn, .lookout-toolbar";
+const LOOKOUT_WRAPPERS =
+  ".lookout-table-host, .lookout-table-scroll, .lookout-viewport, .lookout-stage";
+/**
+ * Nearest note-ish root to read definitions from — never `activeDocument`. A
+ * second pane on the same note renders its own copy with a different `docId`,
+ * so a document-wide search could silently pick up the *other* pane's list.
+ */
+const NOTE_ROOT =
+  ".markdown-embed, .markdown-preview-view, .markdown-rendered, .markdown-source-view";
+
+/**
+ * Monotonic across every overlay ever opened, so the ids minted for one
+ * full-screen view can never collide with another's (two overlays at once, or a
+ * re-open of the same table).
+ */
+let fsSeq = 0;
+
 /**
  * Wide tables get a single full-screen button (no zoom). Inline, the table
  * keeps its normal horizontal scroll inside our own scroll wrapper so the
@@ -762,6 +823,11 @@ class TableView {
   host!: HTMLDivElement;
   scroll!: HTMLDivElement;
   overlay: HTMLDivElement | null = null;
+  /** the inline trigger, kept so focus can return to it when the overlay closes */
+  fsBtn!: HTMLButtonElement;
+  /** namespaced footnote id → the node in the overlay it now identifies */
+  fsTargets: Map<string, HTMLElement> | null = null;
+  fsHighlightTimer: number | null = null;
 
   constructor(table: HTMLTableElement, options: TableViewOptions) {
     this.table = table;
@@ -790,6 +856,185 @@ class TableView {
       this.openFullscreen();
     });
     this.host.appendChild(btn);
+    this.fsBtn = btn;
+  }
+
+  /*
+   * The note container this table belongs to. Scoped on purpose: reading the
+   * definitions from `activeDocument` would let a second pane showing the same
+   * note donate its (differently-id'd, non-matching) list.
+   */
+  _noteRoot(): HTMLElement | null {
+    return (
+      this.table.closest<HTMLElement>(NOTE_ROOT) ??
+      this.table.closest<HTMLElement>(".workspace-leaf")
+    );
+  }
+
+  /*
+   * Index the note's rendered footnote definitions by the id its references
+   * point at. Strictly read-only over live, Obsidian-owned DOM: nothing here
+   * moves, re-ids or otherwise touches the note.
+   */
+  _collectDefs(): Map<string, HTMLElement> {
+    const map = new Map<string, HTMLElement>();
+    const root = this._noteRoot();
+    if (!root) return map;
+    root.querySelectorAll(FN_DEF).forEach((li) => {
+      if (!li.instanceOf(HTMLElement)) return;
+      const key = li.id || li.getAttribute("data-footnote-id") || "";
+      if (!key || map.has(key)) return;
+      map.set(key, li);
+    });
+    return map;
+  }
+
+  /*
+   * Clone hygiene: strip the Live Preview editor chrome and any of Lookout's
+   * own controls that rode along, then unwrap Lookout's wrappers so their
+   * contents survive as plain rendered markup. Idempotent, and safe to run on
+   * anything — outer wrappers are unwrapped before inner ones (the NodeList is
+   * static and in document order) and children move into the still-attached
+   * grandparent, so nothing is orphaned.
+   *
+   * It also drops every `id` the clone carried over, except on the footnote
+   * identity nodes `_namespace` is about to re-mint. A table can legitimately
+   * own one (Obsidian stamps a `^block-id` onto the element) and a cell can
+   * contain anything, so without this the overlay would put a second copy of
+   * those ids in the document for as long as it is open — invalid DOM, and
+   * enough to send an in-note `#…` link to the clone instead of the note.
+   */
+  _scrub(root: HTMLElement) {
+    root.querySelectorAll(TABLE_EDITOR_CHROME).forEach((node) => node.remove());
+    root.querySelectorAll(LOOKOUT_CHROME).forEach((node) => node.remove());
+    root.querySelectorAll(LOOKOUT_WRAPPERS).forEach((wrap) => {
+      const parent = wrap.parentElement;
+      if (!parent) return;
+      while (wrap.firstChild) parent.insertBefore(wrap.firstChild, wrap);
+      wrap.remove();
+    });
+    if (root.id && !root.matches(FN_IDENTIFIED)) root.removeAttribute("id");
+    root.querySelectorAll("[id]").forEach((node) => {
+      if (!node.matches(FN_IDENTIFIED)) node.removeAttribute("id");
+    });
+  }
+
+  /*
+   * Build the `<section class="footnotes">` that goes under the cloned table,
+   * containing a copy of every definition the clone's markers actually point
+   * at. Returns `null` — the "behave exactly as before" path — whenever there
+   * is nothing to show: no markers at all, no note root, no rendered `.footnotes`
+   * (Live Preview, and reading-view sections Obsidian has virtualised away), or
+   * no marker whose target resolves. On every one of those paths the clone is
+   * returned untouched, so the overlay really is byte-identical to the one built
+   * before footnote support existed — hence the strict split below between a
+   * read-only resolution pass and the mutating pass that runs only once the
+   * section is certain to be emitted. Individual unresolvable markers (a *mixed*
+   * note, where some definitions did resolve) stay visible but are made inert;
+   * there is deliberately no `Notice`, because in those modes the note itself
+   * cannot show the text either.
+   */
+  _buildFootnotes(
+    clone: HTMLElement,
+    defs: Map<string, HTMLElement>
+  ): HTMLElement | null {
+    const refs = clone.querySelectorAll<HTMLAnchorElement>(FN_REF);
+    if (refs.length === 0) return null;
+    // Nothing can resolve, so nothing may be marked up: Live Preview never
+    // renders a definition list, and neither does a reading-view note whose
+    // `.footnotes` section is currently virtualised away.
+    if (defs.size === 0) return null;
+
+    // Pass 1 — strictly read-only over the clone. Keyed by href fragment, so a
+    // footnote referenced twice is emitted once, in first-reference order.
+    const picked = new Map<string, HTMLElement>();
+    const resolved: HTMLAnchorElement[] = [];
+    const unresolved: HTMLAnchorElement[] = [];
+    refs.forEach((a) => {
+      // The raw attribute, never `a.hash`: an unresolved href is not a URL.
+      const href = a.getAttribute("href") ?? "";
+      const key = href.slice(1);
+      const def = key ? defs.get(key) : undefined;
+      if (!def) {
+        unresolved.push(a);
+        return;
+      }
+      resolved.push(a);
+      if (!picked.has(key)) picked.set(key, def);
+    });
+    if (picked.size === 0) return null;
+
+    const section = el("section", "footnotes lookout-fs-footnotes");
+    const list = el("ol");
+    picked.forEach((def) => {
+      const li = def.cloneNode(true);
+      if (!li.instanceOf(HTMLLIElement)) return;
+      // The list is a *subset* of the note's definitions, so the numbering has
+      // to be carried over explicitly — otherwise a table referencing only
+      // footnote 3 would render it as "1." under a marker reading "[3]".
+      const ol = def.parentElement;
+      if (ol && ol.instanceOf(HTMLOListElement)) {
+        const idx = Array.prototype.indexOf.call(ol.children, def);
+        if (idx >= 0) li.value = (ol.start || 1) + idx;
+      }
+      li.setAttribute("tabindex", "-1");
+      list.appendChild(li);
+    });
+    if (!list.firstChild) return null;
+
+    // Pass 2 — the section is going to be emitted, so the clone may be touched.
+    resolved.forEach((a) => {
+      // Never let a footnote marker open a browser window from the overlay.
+      a.removeAttribute("target");
+      a.removeAttribute("rel");
+    });
+    unresolved.forEach((a) => {
+      a.removeAttribute("href");
+      a.removeAttribute("target");
+      a.removeAttribute("rel");
+      a.setAttribute("aria-disabled", "true");
+      a.addClass("lookout-fn-unresolved");
+      a.setAttribute("aria-label", "각주 내용을 찾을 수 없습니다");
+      a.title = "각주 내용을 찾을 수 없습니다";
+    });
+
+    section.appendChild(list);
+    this._scrub(section);
+    return section;
+  }
+
+  /*
+   * Re-point every footnote identity and `#`-href inside `root` at an
+   * overlay-local namespace, and return the resulting id → node map used for
+   * jumps. Must run while `root` is still detached, so the document never holds
+   * duplicate ids — not even for a frame.
+   */
+  _namespace(root: HTMLElement, prefix: string): Map<string, HTMLElement> {
+    const targets = new Map<string, HTMLElement>();
+    root.querySelectorAll<HTMLElement>(FN_IDENTIFIED).forEach((node) => {
+      const base = node.id || node.getAttribute("data-footnote-id") || "";
+      if (!base) return;
+      const id = prefix + base;
+      node.id = id;
+      if (node.hasAttribute("data-footnote-id")) {
+        node.setAttribute("data-footnote-id", id);
+      }
+      // Programmatic focus target only; never in the tab order.
+      node.setAttribute("tabindex", "-1");
+      targets.set(id, node);
+    });
+    root.querySelectorAll<HTMLAnchorElement>(FN_ANCHOR).forEach((a) => {
+      const href = a.getAttribute("href") ?? "";
+      if (href.startsWith("#")) a.setAttribute("href", "#" + prefix + href.slice(1));
+      // The anchor gets no id of its own (see FN_IDENTIFIED), but its stale
+      // `data-footnote-id` still names a node in the note; re-point it so the
+      // overlay never advertises a note-scoped footnote identity.
+      const fid = a.getAttribute("data-footnote-id");
+      if (fid) a.setAttribute("data-footnote-id", prefix + fid);
+      a.removeAttribute("target");
+      a.removeAttribute("rel");
+    });
+    return targets;
   }
 
   openFullscreen() {
@@ -804,10 +1049,29 @@ class TableView {
     const scroll = el("div", "lookout-table-fs-scroll markdown-rendered");
     const clone = this.table.cloneNode(true) as HTMLTableElement;
     clone.classList.add("lookout-table-fs-table");
-    // Drop the Live Preview editor's drag handles/menu buttons that came along
-    // with the clone — they would otherwise show as stray ":::"/"⋮" marks.
-    clone.querySelectorAll(TABLE_EDITOR_CHROME).forEach((node) => node.remove());
-    scroll.appendChild(clone);
+    // Drops the Live Preview editor's drag handles/menu buttons that came along
+    // with the clone (stray ":::"/"⋮" marks) plus any Lookout chrome.
+    this._scrub(clone);
+
+    // Footnote definitions live outside the <table>, so they have to be carried
+    // in explicitly. `notes === null` is the common case and every failure case:
+    // the overlay is then assembled exactly as it was before footnote support
+    // existed — no wrapper, no namespacing, no click handling.
+    let docEl: HTMLElement | null = null;
+    const notes = this._buildFootnotes(clone, this._collectDefs());
+    if (!notes) {
+      scroll.appendChild(clone);
+    } else {
+      docEl = el("div", "lookout-fs-doc");
+      docEl.appendChild(clone);
+      docEl.appendChild(notes);
+      scroll.appendChild(docEl);
+      // Namespace while still detached — see `_namespace`.
+      this.fsTargets = this._namespace(docEl, `lookout-fs-${++fsSeq}-`);
+      overlay.addEventListener("click", this.onFsAnchorClick);
+      overlay.addEventListener("auxclick", this.onFsAnchorClick);
+    }
+
     overlay.appendChild(scroll);
 
     const close = el("button", "lookout-btn lookout-fs-close");
@@ -818,14 +1082,64 @@ class TableView {
     close.addEventListener("click", this.onCloseFs);
     overlay.appendChild(close);
 
-    // Click on the empty backdrop (not the table) closes the view.
+    // Click on the empty backdrop (not the table, not the footnotes) closes the
+    // view. The wrapper counts as backdrop: it hugs the table, so anything to
+    // the side of it is empty space.
     overlay.addEventListener("pointerdown", (e) => {
-      if (e.target === overlay || e.target === scroll) this.onCloseFs();
+      if (e.target === overlay || e.target === scroll || (docEl && e.target === docEl)) {
+        this.onCloseFs();
+      }
     });
 
     activeDocument.body.appendChild(overlay);
     activeDocument.addEventListener("keydown", this.onFsKeyDown, true);
     close.focus({ preventScroll: true });
+  }
+
+  /*
+   * Delegated on the overlay, so it dies with it. Only the anchors we
+   * namespaced are ours to handle: the fragment is looked up in `fsTargets` by
+   * string equality — no selector is ever built from a user-authored label, so
+   * a malformed one cannot throw — and anything that does not resolve there
+   * (an internal link or an external URL sitting in a cell) is left with
+   * exactly the behaviour it had before footnote support existed. Registering
+   * `auxclick` too covers middle-click; the modifier variants are cancelled
+   * here before Obsidian's own delegated handlers ever see them.
+   */
+  onFsAnchorClick = (e: MouseEvent) => {
+    const target = e.target as Element | null;
+    if (!target || !target.instanceOf(HTMLElement)) return;
+    const a = target.closest("a");
+    if (!a || !a.instanceOf(HTMLAnchorElement)) return;
+    if (!this.overlay || !this.overlay.contains(a)) return;
+
+    const href = a.getAttribute("href") ?? "";
+    const id = href.startsWith("#") ? href.slice(1) : "";
+    if (!id || !this.fsTargets || !this.fsTargets.has(id)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    this._jumpTo(id);
+  }
+
+  /* Scroll a namespaced footnote node into view and flag it briefly. */
+  _jumpTo(id: string) {
+    const node = this.fsTargets?.get(id);
+    if (!node) return;
+    node.scrollIntoView({
+      block: "center",
+      behavior: REDUCED_MOTION ? "auto" : "smooth",
+    });
+    node.focus({ preventScroll: true });
+    if (this.fsHighlightTimer !== null) window.clearTimeout(this.fsHighlightTimer);
+    this.overlay
+      ?.querySelectorAll(".is-lookout-target")
+      .forEach((n) => n.removeClass("is-lookout-target"));
+    node.addClass("is-lookout-target");
+    this.fsHighlightTimer = window.setTimeout(() => {
+      this.fsHighlightTimer = null;
+      node.removeClass("is-lookout-target");
+    }, 1400);
   }
 
   onFsKeyDown = (e: KeyboardEvent) => {
@@ -837,9 +1151,20 @@ class TableView {
 
   onCloseFs = () => {
     if (!this.overlay) return;
+    if (this.fsHighlightTimer !== null) {
+      window.clearTimeout(this.fsHighlightTimer);
+      this.fsHighlightTimer = null;
+    }
     activeDocument.removeEventListener("keydown", this.onFsKeyDown, true);
+    // Removing the overlay takes the click/auxclick/pointerdown listeners with it.
     this.overlay.remove();
     this.overlay = null;
+    this.fsTargets = null;
+    // Return focus to the trigger — but not on the `destroy()` path, which
+    // closes first and then detaches the host the button lives in.
+    if (!this.destroyed && this.fsBtn && this.fsBtn.isConnected) {
+      this.fsBtn.focus({ preventScroll: true });
+    }
   }
 
   destroy() {
