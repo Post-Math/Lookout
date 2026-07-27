@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-27
+
+### Added
+
+- Full-screen tables now support **footnotes** ([#28]). A cell's footnote marker
+  used to survive into the full-screen view as a dead `[1]`: the definitions
+  live in the note's `.footnotes` list, outside the `<table>` the overlay
+  clones, so there was nothing to show and nothing to jump to. The definitions a
+  table actually references are now carried into the overlay and listed under
+  the clone — numbering preserved, so a table referencing only footnote 3 still
+  reads "3." — and every footnote id and `#`-anchor is re-pointed into an
+  overlay-local namespace so the marker jumps to its definition and the "↩︎"
+  back-reference jumps back, all without leaving full screen or touching the
+  note's own footnote navigation. The footnote text is laid out at a readable
+  measure rather than at the table's width, so a narrow table no longer squeezes
+  it into a one-word-per-line ribbon.
+- Where a definition cannot be resolved — Live Preview renders a table in
+  isolation and produces no definition list, and Reading view virtualises
+  off-screen sections away — the marker stays visible but is made plainly inert,
+  which is the same thing the note itself shows in those modes. A table with no
+  footnotes at all builds exactly the overlay it did before.
+
+### Fixed
+
+- The full-screen clone no longer copies the live table's `id` attributes into
+  the document. A table carrying a `^block-id`, or anything id-bearing inside a
+  cell, previously appeared twice under the same id for as long as the overlay
+  was open — invalid DOM, and enough to send an in-note `#…` link to the clone
+  instead of the note.
+
 ## [1.1.7] - 2026-06-24
 
 ### Fixed
@@ -128,7 +158,9 @@ Initial public release.
   mode), not only in Reading view. The table being actively edited is left
   untouched.
 
-[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.1.3...HEAD
+[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/Post-Math/Lookout/compare/1.1.7...1.2.0
+[#28]: https://github.com/Post-Math/Lookout/issues/28
 [1.1.3]: https://github.com/Post-Math/Lookout/compare/1.1.2...1.1.3
 [1.1.2]: https://github.com/Post-Math/Lookout/compare/1.1.1...1.1.2
 [1.1.1]: https://github.com/Post-Math/Lookout/releases/tag/1.1.1
