@@ -26,8 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Where a definition cannot be resolved — Live Preview renders a table in
   isolation and produces no definition list, and Reading view virtualises
   off-screen sections away — the marker stays visible but is made plainly inert,
-  which is the same thing the note itself shows in those modes. A table with no
-  footnotes at all builds exactly the overlay it did before.
+  and is exposed to assistive tech as a disabled link carrying the reason, not
+  by colour alone. That is the same thing the note itself shows in those modes.
+  A table with no footnotes at all builds exactly the overlay it did before.
 
 ### Fixed
 
@@ -35,7 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the document. A table carrying a `^block-id`, or anything id-bearing inside a
   cell, previously appeared twice under the same id for as long as the overlay
   was open — invalid DOM, and enough to send an in-note `#…` link to the clone
-  instead of the note.
+  instead of the note. Ids inside an SVG a cell contains are deliberately kept:
+  id-scoped `<style>`, `<use>` and gradient/marker/clip-path references break
+  without them, and a duplicated svg-internal id resolves to an identical
+  definition.
+
+### Changed
+
+- Closing a full-screen table **from the keyboard** now returns focus to the
+  inline trigger button, which is made visible while it holds focus. Closing
+  with the mouse still leaves focus where it was, so Space keeps scrolling the
+  note rather than re-activating an invisible button. This affects every
+  full-screen table, not only footnoted ones.
 
 ## [1.1.7] - 2026-06-24
 

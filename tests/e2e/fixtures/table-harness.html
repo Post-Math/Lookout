@@ -1,11 +1,33 @@
 <!doctype html>
 <!--
-  E2E fixture: a wide-ish table inside Obsidian's `.markdown-rendered` context.
+  E2E fixture: tables inside Obsidian's `.markdown-rendered` context.
   The runner injects the real styles.css and the built main.js (with an obsidian
   stub) on top of this. The CSS below is a minimal stand-in for the slice of
   Obsidian's theme that styles tables — it lives ONLY under `.markdown-rendered`,
   exactly like Obsidian's own table rules, so the test can prove the full-screen
   clone inherits the same styling as the inline table.
+
+  Every scenario gets its OWN `div.markdown-rendered` note root with a stable id,
+  because `_noteRoot()` scopes definition lookup to the nearest note root — one
+  shared root would let one scenario's definition list answer another's markers.
+
+  FOOTNOTE MARKUP FIDELITY — this mirrors what Obsidian actually renders, which
+  is *not* what the markdown transformer alone produces:
+    * the transformer emits `<sup class="footnote-ref" data-footnote-id="fnref-D">`
+      containing `<a class="footnote-link" href="#fn-N">[D]</a>`, and
+      `<li data-footnote-id="fn-N">` inside `<section class="footnotes"><hr><ol>`,
+      with ONE `<a class="footnote-backref footnote-link" href="#fnref-D">↩︎</a>`
+      per reference occurrence — including occurrences OUTSIDE the table;
+    * the preview post-processor then suffixes every footnote id and every
+      `#`-href with the rendered note's `docId`, and copies the resulting
+      `data-footnote-id` onto the element as a real `id` attribute.
+  So every `[data-footnote-id]` node below also carries `id="<data-footnote-id>"`,
+  and every `a.footnote-link` href is docId-suffixed. Resolving a marker to its
+  definition depends on that pairing — keep it exact.
+
+  The docId is per rendered note, so each root below uses its own (`d9`, `db`,
+  `dc`, …). Sharing one across roots would put genuine duplicate ids in the
+  fixture itself and the "no duplicate ids" invariant could never be checked.
 -->
 <html>
   <head>
@@ -34,10 +56,18 @@
         background-color: var(--background-secondary);
         font-weight: 600;
       }
+      /*
+       * note-g: a table far wider than the 1280px test viewport. The rule is
+       * keyed on a class, not on `#note-g`, so the width travels with the
+       * full-screen clone — which lives outside the note root.
+       */
+      .wide-col {
+        min-width: 220px;
+      }
     </style>
   </head>
   <body>
-    <div class="markdown-rendered">
+    <div class="markdown-rendered" id="note-a">
       <table>
         <thead>
           <tr><th>A</th><th>B</th><th>C</th></tr>
@@ -54,11 +84,10 @@
         section — in particular that its text is laid out at a readable measure
         rather than at the narrow table's own width.
 
-        The markup below mirrors Obsidian's own renderer exactly: the `<sup>`
-        and the definition `<li>` carry `data-footnote-id` and *no* `id`, the
-        anchors carry only the `#fn-…`/`#fnref-…` href, and the marker's href
-        names the definition's `data-footnote-id`. Keep it that way — resolving
-        a marker to its definition depends on that pairing.
+        The same footnote is referenced a second time from the paragraph BELOW
+        the table, so the definition carries two back-refs: one whose `<sup>`
+        travels into the overlay inside the table, and one whose `<sup>` does
+        not and is therefore dead in the overlay.
       -->
       <table id="fn-table">
         <thead>
@@ -67,14 +96,156 @@
         <tbody>
           <tr>
             <td>1</td>
-            <td>x<sup class="footnote-ref" data-footnote-id="fnref-1"><a href="#fn-1" class="footnote-link">[1]</a></sup></td>
+            <td>x<sup class="footnote-ref" id="fnref-1-d9" data-footnote-id="fnref-1-d9"><a href="#fn-1-d9" class="footnote-link">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Prose referring to the same footnote<sup class="footnote-ref" id="fnref-1-1-d9" data-footnote-id="fnref-1-1-d9"><a href="#fn-1-d9" class="footnote-link">[1-1]</a></sup>.</p>
+      <section class="footnotes">
+        <hr>
+        <ol>
+          <li id="fn-1-d9" data-footnote-id="fn-1-d9">A perfectly ordinary one-sentence inline footnote. <a href="#fnref-1-d9" class="footnote-backref footnote-link">↩︎</a> <a href="#fnref-1-1-d9" class="footnote-backref footnote-link">↩︎</a></li>
+        </ol>
+      </section>
+    </div>
+
+    <!-- Live Preview shape: markers, but no rendered definition list anywhere. -->
+    <div class="markdown-rendered" id="note-b">
+      <table>
+        <thead>
+          <tr><th>A</th><th>B</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>y<sup class="footnote-ref" id="fnref-1-db" data-footnote-id="fnref-1-db"><a href="#fn-1-db" class="footnote-link">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Mixed note: one marker resolves, one does not. -->
+    <div class="markdown-rendered" id="note-c">
+      <table>
+        <thead>
+          <tr><th>A</th><th>B</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ok<sup class="footnote-ref" id="fnref-1-dc" data-footnote-id="fnref-1-dc"><a href="#fn-1-dc" class="footnote-link">[1]</a></sup></td>
+            <td>gone<sup class="footnote-ref" id="fnref-9-dc" data-footnote-id="fnref-9-dc"><a href="#fn-9-dc" class="footnote-link">[9]</a></sup></td>
           </tr>
         </tbody>
       </table>
       <section class="footnotes">
         <hr>
         <ol>
-          <li data-footnote-id="fn-1">A perfectly ordinary one-sentence inline footnote. <a href="#fnref-1" class="footnote-backref footnote-link">↩︎</a></li>
+          <li id="fn-1-dc" data-footnote-id="fn-1-dc">The only definition this note rendered. <a href="#fnref-1-dc" class="footnote-backref footnote-link">↩︎</a></li>
+        </ol>
+      </section>
+    </div>
+
+    <!-- Reference order (2 then 1) deliberately disagrees with document order. -->
+    <div class="markdown-rendered" id="note-d">
+      <table>
+        <thead>
+          <tr><th>A</th><th>B</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>first<sup class="footnote-ref" id="fnref-2-dd" data-footnote-id="fnref-2-dd"><a href="#fn-2-dd" class="footnote-link">[2]</a></sup></td>
+            <td>second<sup class="footnote-ref" id="fnref-1-dd" data-footnote-id="fnref-1-dd"><a href="#fn-1-dd" class="footnote-link">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+      <section class="footnotes">
+        <hr>
+        <ol>
+          <li id="fn-1-dd" data-footnote-id="fn-1-dd">Definition one. <a href="#fnref-1-dd" class="footnote-backref footnote-link">↩︎</a></li>
+          <li id="fn-2-dd" data-footnote-id="fn-2-dd">Definition two. <a href="#fnref-2-dd" class="footnote-backref footnote-link">↩︎</a></li>
+        </ol>
+      </section>
+    </div>
+
+    <!--
+      A cell whose svg styles itself through its own id, next to an ordinary
+      id-bearing element: the clone must keep the first and drop the second.
+    -->
+    <div class="markdown-rendered" id="note-e">
+      <table>
+        <thead>
+          <tr><th>A</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <svg id="probe-svg" width="40" height="20" xmlns="http://www.w3.org/2000/svg">
+                <style>#probe-svg .box { fill: rgb(0, 128, 0); }</style>
+                <rect class="box" x="0" y="0" width="40" height="20"></rect>
+              </svg>
+              <div id="stray">stray</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      A footnote definition containing a Mermaid diagram. Lookout processes it on
+      load and stamps inline sizing onto the live svg, so the clone must have
+      that sizing reset or a 1600px diagram overflows the overlay.
+    -->
+    <div class="markdown-rendered" id="note-f">
+      <table>
+        <thead>
+          <tr><th>A</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>d<sup class="footnote-ref" id="fnref-1-df" data-footnote-id="fnref-1-df"><a href="#fn-1-df" class="footnote-link">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+      <section class="footnotes">
+        <hr>
+        <ol>
+          <li id="fn-1-df" data-footnote-id="fn-1-df">
+            See the diagram:
+            <div class="mermaid">
+              <svg viewBox="0 0 1600 1000" width="1600" height="1000" xmlns="http://www.w3.org/2000/svg">
+                <rect x="0" y="0" width="1600" height="1000" fill="#345"></rect>
+              </svg>
+            </div>
+            <a href="#fnref-1-df" class="footnote-backref footnote-link">↩︎</a>
+          </li>
+        </ol>
+      </section>
+    </div>
+
+    <!-- A ~2200px-wide table whose one-sentence footnote must still read well. -->
+    <div class="markdown-rendered" id="note-g">
+      <table>
+        <thead>
+          <tr>
+            <th class="wide-col">c1</th><th class="wide-col">c2</th><th class="wide-col">c3</th>
+            <th class="wide-col">c4</th><th class="wide-col">c5</th><th class="wide-col">c6</th>
+            <th class="wide-col">c7</th><th class="wide-col">c8</th><th class="wide-col">c9</th>
+            <th class="wide-col">c10</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="wide-col">w<sup class="footnote-ref" id="fnref-1-dg" data-footnote-id="fnref-1-dg"><a href="#fn-1-dg" class="footnote-link">[1]</a></sup></td>
+            <td class="wide-col">b</td><td class="wide-col">c</td><td class="wide-col">d</td>
+            <td class="wide-col">e</td><td class="wide-col">f</td><td class="wide-col">g</td>
+            <td class="wide-col">h</td><td class="wide-col">i</td><td class="wide-col">j</td>
+          </tr>
+        </tbody>
+      </table>
+      <section class="footnotes">
+        <hr>
+        <ol>
+          <li id="fn-1-dg" data-footnote-id="fn-1-dg">A single sentence that has no business being laid out across the full width of a very wide table. <a href="#fnref-1-dg" class="footnote-backref footnote-link">↩︎</a></li>
         </ol>
       </section>
     </div>

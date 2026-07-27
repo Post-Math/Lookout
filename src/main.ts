@@ -828,6 +828,8 @@ class TableView {
   /** namespaced footnote id → the node in the overlay it now identifies */
   fsTargets: Map<string, HTMLElement> | null = null;
   fsHighlightTimer: number | null = null;
+  /** whether the current overlay was dismissed by keyboard, so focus must return to the trigger */
+  fsCloseByKeyboard = false;
 
   constructor(table: HTMLTableElement, options: TableViewOptions) {
     this.table = table;
@@ -897,26 +899,108 @@ class TableView {
    * static and in document order) and children move into the still-attached
    * grandparent, so nothing is orphaned.
    *
-   * It also drops every `id` the clone carried over, except on the footnote
-   * identity nodes `_namespace` is about to re-mint. A table can legitimately
-   * own one (Obsidian stamps a `^block-id` onto the element) and a cell can
-   * contain anything, so without this the overlay would put a second copy of
-   * those ids in the document for as long as it is open — invalid DOM, and
-   * enough to send an in-note `#…` link to the clone instead of the note.
+   * It also drops every *document-level* `id` the clone carried over — a
+   * table's `^block-id`, anything id-bearing in a cell — except the footnote
+   * identity nodes `_namespace` re-mints. Without this the overlay would put a
+   * second copy of those ids in the document for as long as it is open —
+   * invalid DOM, and enough to send an in-note `#…` link to the clone instead
+   * of the note. Ids *inside an SVG subtree are deliberately kept*, because
+   * id-scoped `<style>`, `<use>`, gradient/marker/clip-path references break
+   * outright without them, whereas a duplicated svg-internal id is benign
+   * (same-document `url(#…)` resolves to an identical definition).
    */
   _scrub(root: HTMLElement) {
     root.querySelectorAll(TABLE_EDITOR_CHROME).forEach((node) => node.remove());
     root.querySelectorAll(LOOKOUT_CHROME).forEach((node) => node.remove());
+    // Undo the inline sizing `DiagramView._build` stamped on a wrapped svg
+    // before the wrapper that clipped it is unwrapped away: a cloned 1600px
+    // diagram would otherwise render unscaled and overflow the overlay's
+    // scroll container. (`DiagramView.openFullscreen` performs the same reset
+    // on its own clone.)
+    root.querySelectorAll<SVGSVGElement>(".lookout-stage svg").forEach((s) =>
+      s.setCssStyles({ width: "", height: "", maxWidth: "", display: "" })
+    );
     root.querySelectorAll(LOOKOUT_WRAPPERS).forEach((wrap) => {
       const parent = wrap.parentElement;
       if (!parent) return;
       while (wrap.firstChild) parent.insertBefore(wrap.firstChild, wrap);
       wrap.remove();
     });
-    if (root.id && !root.matches(FN_IDENTIFIED)) root.removeAttribute("id");
+    if (root.id && root.namespaceURI !== SVG_NS && !root.matches(FN_IDENTIFIED)) {
+      root.removeAttribute("id");
+    }
     root.querySelectorAll("[id]").forEach((node) => {
+      // Namespace test, not `closest("svg")`: an HTML element inside a
+      // `<foreignObject>` is not svg-internal and must still be stripped.
+      if (node.namespaceURI === SVG_NS) return;
       if (!node.matches(FN_IDENTIFIED)) node.removeAttribute("id");
     });
+  }
+
+  /*
+   * The single "this footnote anchor cannot be resolved here" treatment. An
+   * href-less `<a>` computes ARIA role `generic`, on which `aria-label` is
+   * *prohibited* (name-from-author disallowed) — so the explanation would never
+   * reach a screen reader and the only remaining cue would be colour. Restoring
+   * `role="link"` gives it an author-nameable role again, so both the label and
+   * `aria-disabled` are honoured. Idempotent by construction.
+   */
+  _makeInert(a: HTMLAnchorElement) {
+    a.removeAttribute("href");
+    a.removeAttribute("target");
+    a.removeAttribute("rel");
+    a.setAttribute("role", "link");
+    a.setAttribute("aria-disabled", "true");
+    // A back-ref's visible text is the "↩︎" glyph, which names nothing; a
+    // marker's is its number, and the name has to *contain* it rather than
+    // replace it — a bare "내용을 찾을 수 없습니다" erases the "[1]" for anyone
+    // who cannot see the glyph it sits on.
+    const marker = (a.textContent || "").trim();
+    const label = a.classList.contains("footnote-backref")
+      ? "돌아갈 각주 참조가 이 화면에 없습니다"
+      : marker
+        ? `각주 ${marker} — 내용을 찾을 수 없습니다`
+        : "각주 내용을 찾을 수 없습니다";
+    a.setAttribute("aria-label", label);
+    a.title = label;
+    a.classList.add("lookout-fn-unresolved");
+  }
+
+  /*
+   * The one sweep that decides which footnote anchors survive as links. The
+   * predicate is FN_ANCHOR, not FN_REF, on purpose: it covers the definitions'
+   * "↩︎" back-refs too. A definition carries one back-ref per *reference
+   * occurrence*, including occurrences outside the table, so those extra
+   * back-refs are guaranteed dead in the overlay — left live they look
+   * clickable, do nothing, and let the browser set `location.hash` and push a
+   * history entry on the Obsidian window. An ordinary link in a cell is never
+   * matched. `targets === null` means nothing can resolve at all.
+   */
+  _hardenAnchors(root: HTMLElement, targets: Map<string, HTMLElement> | null) {
+    root.querySelectorAll<HTMLAnchorElement>(FN_ANCHOR).forEach((a) => {
+      const href = a.getAttribute("href") ?? "";
+      const id = href.startsWith("#") ? href.slice(1) : "";
+      if (id && targets && targets.has(id)) return;
+      this._makeInert(a);
+    });
+  }
+
+  /*
+   * The degradation path: `_buildFootnotes` found nothing to show, so
+   * `_namespace` never runs and the clone still carries the note's own footnote
+   * identities (which `_scrub` preserves precisely for `_namespace` to re-mint)
+   * and its live `#fn-…` hrefs. Appending that to the body would put duplicate
+   * ids in the document and let a click scroll or navigate the note *behind*
+   * the overlay, so the reader lands somewhere they never went after Escape.
+   * A table with no footnote markers at all matches neither selector, so this
+   * mutates nothing and the overlay stays byte-identical to the pre-footnote one.
+   */
+  _degradeFootnotes(root: HTMLElement) {
+    root.querySelectorAll<HTMLElement>(FN_IDENTIFIED).forEach((node) => {
+      node.removeAttribute("id");
+      node.removeAttribute("data-footnote-id");
+    });
+    this._hardenAnchors(root, null);
   }
 
   /*
@@ -925,14 +1009,17 @@ class TableView {
    * at. Returns `null` — the "behave exactly as before" path — whenever there
    * is nothing to show: no markers at all, no note root, no rendered `.footnotes`
    * (Live Preview, and reading-view sections Obsidian has virtualised away), or
-   * no marker whose target resolves. On every one of those paths the clone is
-   * returned untouched, so the overlay really is byte-identical to the one built
-   * before footnote support existed — hence the strict split below between a
-   * read-only resolution pass and the mutating pass that runs only once the
-   * section is certain to be emitted. Individual unresolvable markers (a *mixed*
-   * note, where some definitions did resolve) stay visible but are made inert;
-   * there is deliberately no `Notice`, because in those modes the note itself
-   * cannot show the text either.
+   * no marker whose target resolves. A table with no footnote markers at all
+   * returns a byte-identical overlay, exactly as before. A table whose markers
+   * cannot resolve does not: `openFullscreen` then runs `_degradeFootnotes` on
+   * the clone, stripping the footnote identities `_scrub` preserved for
+   * `_namespace` and making every marker inert — leaving them live would put
+   * duplicate ids in the document and let a click navigate the note behind the
+   * overlay. This method itself stays strictly read-only over the clone; the
+   * one inert-treatment site is `_makeInert`, reached only via `_hardenAnchors`.
+   * Individual unresolvable markers (a *mixed* note, where some definitions did
+   * resolve) stay visible but are made inert; there is deliberately no
+   * `Notice`, because in those modes the note itself cannot show the text either.
    */
   _buildFootnotes(
     clone: HTMLElement,
@@ -945,28 +1032,28 @@ class TableView {
     // `.footnotes` section is currently virtualised away.
     if (defs.size === 0) return null;
 
-    // Pass 1 — strictly read-only over the clone. Keyed by href fragment, so a
-    // footnote referenced twice is emitted once, in first-reference order.
+    // Read-only over the clone. Keyed by href fragment, so a footnote
+    // referenced twice is picked once.
     const picked = new Map<string, HTMLElement>();
-    const resolved: HTMLAnchorElement[] = [];
-    const unresolved: HTMLAnchorElement[] = [];
     refs.forEach((a) => {
       // The raw attribute, never `a.hash`: an unresolved href is not a URL.
       const href = a.getAttribute("href") ?? "";
       const key = href.slice(1);
       const def = key ? defs.get(key) : undefined;
-      if (!def) {
-        unresolved.push(a);
-        return;
-      }
-      resolved.push(a);
-      if (!picked.has(key)) picked.set(key, def);
+      if (def && !picked.has(key)) picked.set(key, def);
     });
     if (picked.size === 0) return null;
 
     const section = el("section", "footnotes lookout-fs-footnotes");
     const list = el("ol");
-    picked.forEach((def) => {
+    // `picked` is in first-*reference* order, so a table whose first cell
+    // references [^2] and a later cell [^1] would emit "2." above "1." — a
+    // visibly descending ordered list that does not match the note's own
+    // footnote section. Emit in the note's document order instead.
+    const ordered = Array.from(picked.values()).sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+    );
+    ordered.forEach((def) => {
       const li = def.cloneNode(true);
       if (!li.instanceOf(HTMLLIElement)) return;
       // The list is a *subset* of the note's definitions, so the numbering has
@@ -981,22 +1068,6 @@ class TableView {
       list.appendChild(li);
     });
     if (!list.firstChild) return null;
-
-    // Pass 2 — the section is going to be emitted, so the clone may be touched.
-    resolved.forEach((a) => {
-      // Never let a footnote marker open a browser window from the overlay.
-      a.removeAttribute("target");
-      a.removeAttribute("rel");
-    });
-    unresolved.forEach((a) => {
-      a.removeAttribute("href");
-      a.removeAttribute("target");
-      a.removeAttribute("rel");
-      a.setAttribute("aria-disabled", "true");
-      a.addClass("lookout-fn-unresolved");
-      a.setAttribute("aria-label", "각주 내용을 찾을 수 없습니다");
-      a.title = "각주 내용을 찾을 수 없습니다";
-    });
 
     section.appendChild(list);
     this._scrub(section);
@@ -1055,11 +1126,22 @@ class TableView {
 
     // Footnote definitions live outside the <table>, so they have to be carried
     // in explicitly. `notes === null` is the common case and every failure case:
-    // the overlay is then assembled exactly as it was before footnote support
-    // existed — no wrapper, no namespacing, no click handling.
+    // no wrapper, no namespacing, no click handling. Only a table with no
+    // footnote markers at all is then byte-identical to the pre-footnote
+    // overlay — a table whose markers exist but cannot resolve still goes
+    // through `_degradeFootnotes`, which strips the identities `_scrub` was
+    // holding for `_namespace` and makes those markers inert.
+    //
+    // INVARIANT (detached-until-clean): everything that mints, strips or re-points a
+    // footnote identity or a `#`-href runs while `overlay` is still detached, so the
+    // document never holds a duplicate id — not even for a frame — and no anchor that
+    // cannot resolve inside the overlay ever reaches the body with a live href.
+    // Namespacing must therefore precede hardening: hardening decides "dead" by
+    // looking the anchor's (already namespaced) fragment up in `fsTargets`.
     let docEl: HTMLElement | null = null;
     const notes = this._buildFootnotes(clone, this._collectDefs());
     if (!notes) {
+      this._degradeFootnotes(clone);
       scroll.appendChild(clone);
     } else {
       docEl = el("div", "lookout-fs-doc");
@@ -1068,6 +1150,7 @@ class TableView {
       scroll.appendChild(docEl);
       // Namespace while still detached — see `_namespace`.
       this.fsTargets = this._namespace(docEl, `lookout-fs-${++fsSeq}-`);
+      this._hardenAnchors(docEl, this.fsTargets);
       overlay.addEventListener("click", this.onFsAnchorClick);
       overlay.addEventListener("auxclick", this.onFsAnchorClick);
     }
@@ -1079,12 +1162,20 @@ class TableView {
     close.appendChild(svgIcon("close"));
     close.setAttribute("aria-label", "닫기");
     close.title = "닫기 (Esc)";
-    close.addEventListener("click", this.onCloseFs);
+    // `detail === 0` is the standard "click synthesised from Enter/Space"
+    // signal; a real pointer click reports `detail >= 1`. Only the keyboard
+    // route wants focus handed back to the (normally invisible) trigger.
+    close.addEventListener("click", (e) => {
+      this.fsCloseByKeyboard = e.detail === 0;
+      this.onCloseFs();
+    });
     overlay.appendChild(close);
 
     // Click on the empty backdrop (not the table, not the footnotes) closes the
-    // view. The wrapper counts as backdrop: it hugs the table, so anything to
-    // the side of it is empty space.
+    // view. The wrapper counts as backdrop: it is `min(100%, 60ch)` wide, so
+    // the strips beside a narrow table are bare wrapper — and those strips
+    // belonged to `scroll` before this change, which the condition already
+    // closed on.
     overlay.addEventListener("pointerdown", (e) => {
       if (e.target === overlay || e.target === scroll || (docEl && e.target === docEl)) {
         this.onCloseFs();
@@ -1093,6 +1184,7 @@ class TableView {
 
     activeDocument.body.appendChild(overlay);
     activeDocument.addEventListener("keydown", this.onFsKeyDown, true);
+    this.fsCloseByKeyboard = false;
     close.focus({ preventScroll: true });
   }
 
@@ -1107,6 +1199,10 @@ class TableView {
    * here before Obsidian's own delegated handlers ever see them.
    */
   onFsAnchorClick = (e: MouseEvent) => {
+    // `auxclick` fires for the secondary button too, and `contextmenu` has
+    // already fired by then: a right-click on a marker would otherwise get the
+    // context menu *and* an unrequested scroll + focus steal underneath it.
+    if (e.type === "auxclick" && e.button !== 1) return;
     const target = e.target as Element | null;
     if (!target || !target.instanceOf(HTMLElement)) return;
     const a = target.closest("a");
@@ -1134,23 +1230,26 @@ class TableView {
     if (this.fsHighlightTimer !== null) window.clearTimeout(this.fsHighlightTimer);
     this.overlay
       ?.querySelectorAll(".is-lookout-target")
-      .forEach((n) => n.removeClass("is-lookout-target"));
-    node.addClass("is-lookout-target");
+      .forEach((n) => n.classList.remove("is-lookout-target"));
+    node.classList.add("is-lookout-target");
     this.fsHighlightTimer = window.setTimeout(() => {
       this.fsHighlightTimer = null;
-      node.removeClass("is-lookout-target");
+      node.classList.remove("is-lookout-target");
     }, 1400);
   }
 
   onFsKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
+      this.fsCloseByKeyboard = true;
       this.onCloseFs();
     }
   }
 
   onCloseFs = () => {
     if (!this.overlay) return;
+    const restore = this.fsCloseByKeyboard;
+    this.fsCloseByKeyboard = false;
     if (this.fsHighlightTimer !== null) {
       window.clearTimeout(this.fsHighlightTimer);
       this.fsHighlightTimer = null;
@@ -1160,9 +1259,13 @@ class TableView {
     this.overlay.remove();
     this.overlay = null;
     this.fsTargets = null;
-    // Return focus to the trigger — but not on the `destroy()` path, which
-    // closes first and then detaches the host the button lives in.
-    if (!this.destroyed && this.fsBtn && this.fsBtn.isConnected) {
+    // Return focus to the trigger — but only when the close came from the
+    // keyboard, and never on the `destroy()` path, which closes first and then
+    // detaches the host the button lives in. After a *mouse* close the trigger
+    // would be focused while `:focus-visible` does not match, i.e. invisible at
+    // `opacity: 0`, and the next Space/Enter would re-open the overlay instead
+    // of scrolling the note.
+    if (restore && !this.destroyed && this.fsBtn && this.fsBtn.isConnected) {
       this.fsBtn.focus({ preventScroll: true });
     }
   }
