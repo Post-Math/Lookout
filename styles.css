@@ -408,6 +408,16 @@
   scroll-margin-top: 72px; /* clear the fixed close button when jumped to */
 }
 
+/* MarkdownRenderer wraps a definition's first block in <p>; the cloned <li>
+   contents used to be inline, so trim the outer margins to keep the list tight. */
+.lookout-table-fs-scroll .lookout-fs-footnotes li > p:first-child {
+  margin-top: 0;
+}
+
+.lookout-table-fs-scroll .lookout-fs-footnotes li > p:last-child {
+  margin-bottom: 0;
+}
+
 /* Pointer-driven jumps focus the li programmatically and need no ring; a
    keyboard-driven jump must keep one after `.is-lookout-target` expires. */
 .lookout-table-fs-scroll .lookout-fs-footnotes li:focus {

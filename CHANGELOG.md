@@ -13,21 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Full-screen tables now support **footnotes** ([#28]). A cell's footnote marker
   used to survive into the full-screen view as a dead `[1]`: the definitions
-  live in the note's `.footnotes` list, outside the `<table>` the overlay
-  clones, so there was nothing to show and nothing to jump to. The definitions a
-  table actually references are now carried into the overlay and listed under
-  the clone — numbering preserved, so a table referencing only footnote 3 still
-  reads "3." — and every footnote id and `#`-anchor is re-pointed into an
+  live outside the `<table>` the overlay clones, so there was nothing to show
+  and nothing to jump to. The definitions a table actually references are now
+  resolved from the note's own **source** through Obsidian's metadata cache and
+  rendered under the clone, so they appear no matter where the table sits in the
+  note — numbering preserved, so a table referencing only footnote 3 still reads
+  "3." — and every footnote id and `#`-anchor is re-pointed into an
   overlay-local namespace so the marker jumps to its definition and the "↩︎"
   back-reference jumps back, all without leaving full screen or touching the
   note's own footnote navigation. The footnote text is laid out at a readable
   measure rather than at the table's width, so a narrow table no longer squeezes
   it into a one-word-per-line ribbon.
-- Where a definition cannot be resolved — Live Preview renders a table in
-  isolation and produces no definition list, and Reading view virtualises
-  off-screen sections away — the marker stays visible but is made plainly inert,
-  and is exposed to assistive tech as a disabled link carrying the reason, not
-  by colour alone. That is the same thing the note itself shows in those modes.
+- Scope: footnotes resolve in **Reading view**. **Live Preview is not
+  supported**, because Obsidian parses each block there on its own: a
+  reference-style marker (`[^id]`) is not rendered inside a table widget at all
+  (the definition is outside that block, and the note itself shows the marker as
+  plain text), and an inline marker (`^[note]`) is numbered within its block
+  rather than within the note, so it cannot be matched to a definition — a
+  paragraph's footnote above the table would otherwise be rendered under the
+  table's marker. Where a definition cannot be resolved — that case, a footnote
+  referenced but never defined, a table in a surface with no backing file, or a
+  metadata index that has not caught up with the file — the marker stays visible
+  but is made plainly inert, and is exposed to assistive tech as a disabled link
+  carrying the reason, not by colour alone. Wrong footnote text under a right
+  marker is never shown.
   A table with no footnotes at all builds exactly the overlay it did before.
 
 ### Fixed
@@ -43,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The minimum supported Obsidian version is now **1.6.6**, the release that
+  exposes footnotes in the metadata cache — the single source full-screen
+  footnote definitions are read from.
 - Closing a full-screen table **from the keyboard** now returns focus to the
   inline trigger button, which is made visible while it holds focus. Closing
   with the mouse still leaves focus where it was, so Space keeps scrolling the

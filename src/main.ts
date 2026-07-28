@@ -10,7 +10,16 @@
  * Obsidian theme surfaces with a single survey-cyan accent and a monospace gauge.
  */
 
-import { Notice, Plugin } from "obsidian";
+import {
+  App,
+  Component,
+  FootnoteCache,
+  MarkdownRenderer,
+  MarkdownView,
+  Notice,
+  Plugin,
+  TFile,
+} from "obsidian";
 
 const PAD = 24; // slack (px) so diagram edges can be panned just past the frame
 const MIN_SCALE = 0.1;
@@ -733,6 +742,29 @@ interface TableViewOptions {
   parent: HTMLElement;
   /** node to insert the host before */
   anchor: Node | null;
+  /** for metadataCache / vault reads and MarkdownRenderer's sourcePath */
+  app: App;
+}
+
+/** One footnote marker occurrence inside the cloned table. */
+interface FnRef {
+  /** the cloned marker anchor — a live node in the clone */
+  a: HTMLAnchorElement;
+  /** `a.closest("sup.footnote-ref")` — the node a back-ref jumps to */
+  sup: HTMLElement | null;
+  /** the ORIGINAL href minus '#', e.g. "fn-3-c0a3ab87fc97df88" */
+  fragment: string;
+  /** `data-footref` — the join key into the metadata cache, e.g. "dup" / "[inline5" */
+  id: string;
+  /** the displayed footnote number */
+  num: number;
+}
+
+/** One resolved definition, ready to render. */
+interface FnDef {
+  num: number;
+  fragment: string;
+  markdown: string;
 }
 
 /**
@@ -751,24 +783,25 @@ const TABLE_EDITOR_CHROME =
  * Footnotes in the full-screen table clone.
  *
  * The clone lives outside the note's rendered container, so everything the
- * footnote mechanism relies on beyond the <table> subtree — the note's
- * `.footnotes` definition list, Obsidian's own scoped click handlers, the
- * `#fn-…`/`#fnref-…` id anchors — is unreachable from the overlay. We therefore
- * clone the *definitions* in next to the table and re-point every footnote id
- * and `#`-href at overlay-local copies. Everything below feeds that.
+ * footnote mechanism relies on beyond the <table> subtree — Obsidian's own
+ * scoped click handlers, the `#fn-…`/`#fnref-…` id anchors — is unreachable
+ * from the overlay.
+ *
+ * The definitions are *not* read from the rendered DOM. Obsidian does not
+ * render off-screen sections, and a note's footnote section sits at the very
+ * bottom while the table sits above it, so `.footnotes` is simply absent from
+ * the document for every table but the note's last one (and absent always in
+ * Live Preview, which renders each block in isolation). We therefore resolve
+ * every definition from the note's **source**: `metadataCache.getFileCache()`
+ * gives `{ id, position }` per footnote, `data-footref` on the marker is the
+ * join key, `vault.cachedRead()` supplies the text, and `MarkdownRenderer`
+ * renders it into the overlay. Everything below feeds that.
  */
 
 /** A footnote reference marker inside a cell — never the definition's back-ref. */
 const FN_REF = 'a.footnote-link:not(.footnote-backref)[href^="#"]';
 /** Every footnote anchor in the overlay (refs *and* back-refs) needs re-pointing. */
 const FN_ANCHOR = 'a.footnote-link[href^="#"]';
-/**
- * The note's rendered definitions. Reading view only: in Live Preview the table
- * widget renders its slice in isolation and no definition list exists anywhere
- * in the DOM, so this legitimately finds nothing (see the degradation path in
- * `_buildFootnotes`).
- */
-const FN_DEF = ".footnotes li";
 /**
  * Nodes carrying a footnote identity that must be re-namespaced on the clone.
  * Deliberately narrow — a blanket id rewrite would also hit `url(#…)` /
@@ -793,13 +826,6 @@ const FN_IDENTIFIED =
 const LOOKOUT_CHROME = ".lookout-btn, .lookout-toolbar";
 const LOOKOUT_WRAPPERS =
   ".lookout-table-host, .lookout-table-scroll, .lookout-viewport, .lookout-stage";
-/**
- * Nearest note-ish root to read definitions from — never `activeDocument`. A
- * second pane on the same note renders its own copy with a different `docId`,
- * so a document-wide search could silently pick up the *other* pane's list.
- */
-const NOTE_ROOT =
-  ".markdown-embed, .markdown-preview-view, .markdown-rendered, .markdown-source-view";
 
 /**
  * Monotonic across every overlay ever opened, so the ids minted for one
@@ -819,6 +845,8 @@ class TableView {
   table: HTMLTableElement;
   parent: HTMLElement;
   anchor: Node | null;
+  /** for metadataCache / vault reads and MarkdownRenderer's sourcePath */
+  app: App;
   destroyed: boolean;
   host!: HTMLDivElement;
   scroll!: HTMLDivElement;
@@ -830,11 +858,17 @@ class TableView {
   fsHighlightTimer: number | null = null;
   /** whether the current overlay was dismissed by keyboard, so focus must return to the trigger */
   fsCloseByKeyboard = false;
+  /**
+   * Owns the lifecycle of everything `MarkdownRenderer` builds inside the
+   * overlay. Live only while an overlay is open; unloaded in `onCloseFs`.
+   */
+  fsComponent: Component | null = null;
 
   constructor(table: HTMLTableElement, options: TableViewOptions) {
     this.table = table;
     this.parent = options.parent;
     this.anchor = options.anchor;
+    this.app = options.app;
     this.destroyed = false;
     this._build();
   }
@@ -862,33 +896,107 @@ class TableView {
   }
 
   /*
-   * The note container this table belongs to. Scoped on purpose: reading the
-   * definitions from `activeDocument` would let a second pane showing the same
-   * note donate its (differently-id'd, non-matching) list.
+   * The file whose source carries this table's footnote definitions.
+   *
+   * The embed branch comes first and never falls through to the host: an
+   * embedded note's markers must resolve against the *embedded* file, and
+   * rendering the host note's footnote text under them would be wrong text
+   * under right markers — strictly worse than showing nothing.
+   *
+   * `workspace.getActiveFile()` is deliberately never used: a background pane,
+   * a hover popover or an embed would silently resolve to whatever note happens
+   * to be focused. Walking from this table's own leaf is the only resolution
+   * that cannot pick the wrong note.
    */
-  _noteRoot(): HTMLElement | null {
-    return (
-      this.table.closest<HTMLElement>(NOTE_ROOT) ??
-      this.table.closest<HTMLElement>(".workspace-leaf")
-    );
+  _sourceFile(): TFile | null {
+    const embed = this.table.closest(".internal-embed[src], .markdown-embed[src]");
+    if (embed) {
+      // Strip a `#heading` / `#^block` suffix; an unresolvable link is `null`,
+      // which is the "no file" failure, never the host file.
+      const linkpath = (embed.getAttribute("src") ?? "").split(/[#^]/)[0].trim();
+      if (!linkpath) return null;
+      return this.app.metadataCache.getFirstLinkpathDest(linkpath, this._hostPath());
+    }
+    return this._hostFile();
+  }
+
+  /** The `TFile` of the markdown leaf whose DOM contains this table. */
+  _hostFile(): TFile | null {
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      const view = leaf.view;
+      if (view instanceof MarkdownView && view.containerEl.contains(this.table)) {
+        return view.file;
+      }
+    }
+    return null;
+  }
+
+  _hostPath(): string {
+    return this._hostFile()?.path ?? "";
   }
 
   /*
-   * Index the note's rendered footnote definitions by the id its references
-   * point at. Strictly read-only over live, Obsidian-owned DOM: nothing here
-   * moves, re-ids or otherwise touches the note.
+   * Every footnote marker occurrence in the clone, in document order. Must run
+   * *before* `_namespace`, which rewrites the hrefs this reads.
+   *
+   * The metadata cache is in *definition* order while Obsidian numbers
+   * footnotes in first-*reference* order, so the cache cannot supply the
+   * number; the href fragment is per-definition (`[3]` and `[3-1]` share
+   * `#fn-3-…`) while the link text is per-occurrence, so the href is the
+   * reliable carrier of both the number and the dedupe key. This parses an
+   * *undocumented* id format — the regex guard and the `Number.isInteger`
+   * check are load-bearing, not defensive decoration: a marker we cannot number
+   * gets no record at all and is hardened inert rather than emitted with the
+   * wrong number.
    */
-  _collectDefs(): Map<string, HTMLElement> {
-    const map = new Map<string, HTMLElement>();
-    const root = this._noteRoot();
-    if (!root) return map;
-    root.querySelectorAll(FN_DEF).forEach((li) => {
-      if (!li.instanceOf(HTMLElement)) return;
-      const key = li.id || li.getAttribute("data-footnote-id") || "";
-      if (!key || map.has(key)) return;
-      map.set(key, li);
+  _collectRefs(clone: HTMLElement): FnRef[] {
+    const refs: FnRef[] = [];
+    clone.querySelectorAll<HTMLAnchorElement>(FN_REF).forEach((a) => {
+      // The raw attribute, never `a.hash`: an unresolved href is not a URL.
+      const fragment = (a.getAttribute("href") ?? "").slice(1);
+      if (!fragment) return;
+      // Held as a live node reference into the clone: `_namespace` re-mints its
+      // `id` in place afterwards, so reading `sup.id` later yields the
+      // *namespaced* value — which is exactly what a back-ref must point at.
+      const sup = a.closest<HTMLElement>("sup.footnote-ref");
+      const id =
+        a.getAttribute("data-footref") ?? sup?.getAttribute("data-footref") ?? "";
+      if (!id) return;
+      // An inline footnote's identifier is `[inline<n>`, and <n> counts within
+      // the *parse* that produced the marker. Reading view parses the whole
+      // file, so <n> is the same number the metadata cache assigned. Live
+      // Preview parses each block on its own, so a table widget's first inline
+      // footnote is `[inline0` however many the note carries above it, while
+      // the cache still calls that one `[inline3` — joining the two renders a
+      // *different* footnote's text under the right marker, which is strictly
+      // worse than showing nothing. The block's offset in the file is not
+      // recoverable from the widget (Obsidian emits `data-footref` and nothing
+      // positional), so the index cannot be corrected and the join is refused:
+      // the marker falls through to `_hardenAnchors` and goes inert. Live
+      // Preview already does the same to reference-style markers on its own —
+      // it degrades them to plain text before a marker is ever built — so no
+      // footnote resolves there.
+      if (id.startsWith("[") && this.table.closest(".markdown-source-view")) return;
+      const num = this._refNumber(fragment, a);
+      if (num === null) return;
+      refs.push({ a, sup, fragment, id, num });
     });
-    return map;
+    return refs;
+  }
+
+  /** The displayed footnote number, from the href fragment or the link text. */
+  _refNumber(fragment: string, a: HTMLAnchorElement): number | null {
+    const m = /^fn-(\d+)(?:-|$)/.exec(fragment);
+    let raw = m ? m[1] : "";
+    if (!raw) {
+      // Fallback for a renderer that does not use the `fn-<N>-<docId>` shape:
+      // the visible "[3]" / "[3-1]", of which only the leading segment is the
+      // footnote's number (the suffix counts the occurrence).
+      const text = (a.textContent || "").trim().replace(/^\[/, "").replace(/\]$/, "");
+      raw = text.split("-")[0];
+    }
+    const n = Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : null;
   }
 
   /*
@@ -968,12 +1076,12 @@ class TableView {
 
   /*
    * The one sweep that decides which footnote anchors survive as links. The
-   * predicate is FN_ANCHOR, not FN_REF, on purpose: it covers the definitions'
-   * "↩︎" back-refs too. A definition carries one back-ref per *reference
-   * occurrence*, including occurrences outside the table, so those extra
-   * back-refs are guaranteed dead in the overlay — left live they look
-   * clickable, do nothing, and let the browser set `location.hash` and push a
-   * history entry on the Obsidian window. An ordinary link in a cell is never
+   * predicate is FN_ANCHOR, not FN_REF, on purpose: it also covers "↩︎"
+   * back-refs — the ones we author (whose targets are in `targets` by
+   * construction) and any a rendered definition body happens to contain itself.
+   * A footnote anchor left live without a target in the overlay looks
+   * clickable, does nothing, and lets the browser set `location.hash` and push
+   * a history entry on the Obsidian window. An ordinary link in a cell is never
    * matched. `targets === null` means nothing can resolve at all.
    */
   _hardenAnchors(root: HTMLElement, targets: Map<string, HTMLElement> | null) {
@@ -986,92 +1094,220 @@ class TableView {
   }
 
   /*
-   * The degradation path: `_buildFootnotes` found nothing to show, so
-   * `_namespace` never runs and the clone still carries the note's own footnote
-   * identities (which `_scrub` preserves precisely for `_namespace` to re-mint)
-   * and its live `#fn-…` hrefs. Appending that to the body would put duplicate
-   * ids in the document and let a click scroll or navigate the note *behind*
-   * the overlay, so the reader lands somewhere they never went after Escape.
-   * A table with no footnote markers at all matches neither selector, so this
-   * mutates nothing and the overlay stays byte-identical to the pre-footnote one.
+   * Remove a reference-style definition's leading `[^<id>]:` label and the
+   * whitespace after it. Without this the rendered markdown would *again* be a
+   * footnote definition and the body would disappear into a list Obsidian does
+   * not render here.
+   *
+   * Never compile a regex from `id`: measured ids include the inline form
+   * `[inline5`, which is regex-hostile. `startsWith` is exact and cannot throw.
+   * The strip is prefix-conditional, so an inline definition's slice (which
+   * carries no label at all) is left untouched.
    */
-  _degradeFootnotes(root: HTMLElement) {
-    root.querySelectorAll<HTMLElement>(FN_IDENTIFIED).forEach((node) => {
-      node.removeAttribute("id");
-      node.removeAttribute("data-footnote-id");
-    });
-    this._hardenAnchors(root, null);
+  _stripDefLabel(text: string, id: string): string {
+    const head = "[^" + id + "]";
+    if (!text.startsWith(head)) return text;
+    let i = head.length;
+    if (text[i] === ":") i++;
+    while (text[i] === " " || text[i] === "\t") i++;
+    return text.slice(i);
+  }
+
+  /*
+   * Drop exactly one leading 4-space (or one tab) indent from every line after
+   * the first. A multi-line definition's continuation lines are indented in the
+   * source, so without this a ```` ```mermaid ```` fence sits at 4 spaces and
+   * Markdown parses it as an *indented code block* — a grey blob instead of a
+   * diagram. Exactly one unit per line, never a computed minimum: a line
+   * indented 8 spaces (a nested list) must keep 4, and a lazily continued line
+   * with 0–3 spaces must be left alone.
+   */
+  _dedent(text: string): string {
+    const lines = text.split("\n");
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].startsWith("    ")) lines[i] = lines[i].slice(4);
+      else if (lines[i].startsWith("\t")) lines[i] = lines[i].slice(1);
+    }
+    return lines.join("\n");
+  }
+
+  /*
+   * Is `source[start, end)` really an inline definition's body?
+   *
+   * An inline footnote's cached position is its `contentPosition` — the span of
+   * its children, i.e. the body *without* the surrounding `^[` and `]` — so an
+   * honest slice is still bracketed by them in the source. The cache is read
+   * synchronously while `cachedRead` is awaited, and Obsidian's index lags the
+   * file content, so between an edit and the reindex the offsets can name a
+   * region of the note that is not a footnote at all; without this check that
+   * arbitrary prose renders as the footnote's body. This is the inline
+   * counterpart of the `[^id]` prefix test reference-style slices get.
+   *
+   * Whitespace is tolerated on both sides: `^[ 본문 ]` is legal markdown and
+   * whether the padding falls inside `contentPosition` is not ours to assume.
+   * `slice` with a negative start is harmless — it yields "" and fails.
+   */
+  _isInlineBody(source: string, start: number, end: number): boolean {
+    let i = start;
+    while (i > 0 && (source[i - 1] === " " || source[i - 1] === "\t")) i--;
+    if (source.slice(i - 2, i) !== "^[") return false;
+    let j = end;
+    while (j < source.length && (source[j] === " " || source[j] === "\t")) j++;
+    return source[j] === "]";
+  }
+
+  /*
+   * file → cache → source → join → slice → normalise. One `cachedRead` per
+   * overlay open, shared by every definition.
+   *
+   * A miss never collapses the section: an unknown label, a stale offset or an
+   * empty body drops *that one* definition and leaves every other one to build,
+   * so a single bad footnote cannot make a whole table look unsupported.
+   */
+  async _resolveDefs(refs: FnRef[]): Promise<{ sourcePath: string; defs: FnDef[] }> {
+    const defs: FnDef[] = [];
+    const file = this._sourceFile();
+    // No backing file — a canvas, a plugin view, a popover, an embed whose
+    // `src` does not resolve. Nothing to read; every marker goes inert.
+    if (!file) return { sourcePath: "", defs };
+    const footnotes = this.app.metadataCache.getFileCache(file)?.footnotes;
+    if (!footnotes) return { sourcePath: file.path, defs };
+
+    const source = await this.app.vault.cachedRead(file);
+    const byId = new Map<string, FootnoteCache>();
+    for (const fn of footnotes) if (!byId.has(fn.id)) byId.set(fn.id, fn);
+
+    // Deduped by *fragment*, first occurrence wins: `[3]` and `[3-1]` share
+    // `#fn-3-…`, and the overlay must list that definition once.
+    const seen = new Set<string>();
+    for (const ref of refs) {
+      if (seen.has(ref.fragment)) continue;
+      seen.add(ref.fragment);
+      const fn = byId.get(ref.id);
+      if (!fn) continue;
+      const start = fn.position.start.offset;
+      const end = fn.position.end.offset;
+      // A stale cache can point past EOF; slicing that would render garbage.
+      if (!(start >= 0 && start < end && end <= source.length)) continue;
+      const slice = source.slice(start, end);
+      // Staleness validation, structural on both sides of the fork: measured
+      // inline ids all begin with "[", so an id that does not is
+      // reference-style and its slice *must* carry its own `[^id]` label, while
+      // an inline one must still be bracketed by `^[` … `]` in the source. If
+      // either fails, the cache offsets disagree with what `cachedRead` just
+      // returned (indexing mid-update) and the slice is somebody else's text —
+      // drop it, and let the marker go inert.
+      if (ref.id.startsWith("[")) {
+        if (!this._isInlineBody(source, start, end)) continue;
+      } else if (!slice.startsWith("[^" + ref.id + "]")) continue;
+      const markdown = this._dedent(this._stripDefLabel(slice, ref.id));
+      if (!markdown.trim()) continue;
+      defs.push({ num: ref.num, fragment: ref.fragment, markdown });
+    }
+
+    // Ascending by the marker's own number, which reproduces the note's own
+    // footnote section: Obsidian renders that as an ascending <ol>, so a
+    // numeric sort over a subset of it matches. A table whose first cell
+    // references [^2] and a later cell [^1] must still emit "1." above "2.".
+    defs.sort((a, b) => a.num - b.num);
+    return { sourcePath: file.path, defs };
   }
 
   /*
    * Build the `<section class="footnotes">` that goes under the cloned table,
-   * containing a copy of every definition the clone's markers actually point
-   * at. Returns `null` — the "behave exactly as before" path — whenever there
-   * is nothing to show: no markers at all, no note root, no rendered `.footnotes`
-   * (Live Preview, and reading-view sections Obsidian has virtualised away), or
-   * no marker whose target resolves. A table with no footnote markers at all
-   * returns a byte-identical overlay, exactly as before. A table whose markers
-   * cannot resolve does not: `openFullscreen` then runs `_degradeFootnotes` on
-   * the clone, stripping the footnote identities `_scrub` preserved for
-   * `_namespace` and making every marker inert — leaving them live would put
-   * duplicate ids in the document and let a click navigate the note behind the
-   * overlay. This method itself stays strictly read-only over the clone; the
-   * one inert-treatment site is `_makeInert`, reached only via `_hardenAnchors`.
-   * Individual unresolvable markers (a *mixed* note, where some definitions did
-   * resolve) stay visible but are made inert; there is deliberately no
-   * `Notice`, because in those modes the note itself cannot show the text either.
+   * rendering each resolved definition's *markdown* with Obsidian's own
+   * renderer. Returns `null` when nothing could be built.
+   *
+   * Everything happens on a fully detached section, so the detached-until-clean
+   * invariant holds for every id minted here: the document never carries a
+   * duplicate id, not even for a frame, and a half-built section is never
+   * visible. (If a code-block post-processor is ever found to need an attached
+   * node — a Mermaid fence inside a footnote rendering blank — the one
+   * documented remedy is to append the empty `section` to the overlay before
+   * this loop and keep every other step in the same order.)
    */
-  _buildFootnotes(
-    clone: HTMLElement,
-    defs: Map<string, HTMLElement>
-  ): HTMLElement | null {
-    const refs = clone.querySelectorAll<HTMLAnchorElement>(FN_REF);
-    if (refs.length === 0) return null;
-    // Nothing can resolve, so nothing may be marked up: Live Preview never
-    // renders a definition list, and neither does a reading-view note whose
-    // `.footnotes` section is currently virtualised away.
-    if (defs.size === 0) return null;
-
-    // Read-only over the clone. Keyed by href fragment, so a footnote
-    // referenced twice is picked once.
-    const picked = new Map<string, HTMLElement>();
-    refs.forEach((a) => {
-      // The raw attribute, never `a.hash`: an unresolved href is not a URL.
-      const href = a.getAttribute("href") ?? "";
-      const key = href.slice(1);
-      const def = key ? defs.get(key) : undefined;
-      if (def && !picked.has(key)) picked.set(key, def);
-    });
-    if (picked.size === 0) return null;
+  private async _buildFootnotes(
+    defs: FnDef[],
+    refs: FnRef[],
+    prefix: string,
+    targets: Map<string, HTMLElement>,
+    sourcePath: string
+  ): Promise<HTMLElement | null> {
+    // One Component per overlay owns every MarkdownRenderChild the renders
+    // below create. Assigned to the field *before the first await*, so a close
+    // during rendering always finds it and can unload it.
+    const component = new Component();
+    component.load();
+    this.fsComponent = component;
 
     const section = el("section", "footnotes lookout-fs-footnotes");
     const list = el("ol");
-    // `picked` is in first-*reference* order, so a table whose first cell
-    // references [^2] and a later cell [^1] would emit "2." above "1." — a
-    // visibly descending ordered list that does not match the note's own
-    // footnote section. Emit in the note's document order instead.
-    const ordered = Array.from(picked.values()).sort((a, b) =>
-      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
-    );
-    ordered.forEach((def) => {
-      const li = def.cloneNode(true);
-      if (!li.instanceOf(HTMLLIElement)) return;
-      // The list is a *subset* of the note's definitions, so the numbering has
-      // to be carried over explicitly — otherwise a table referencing only
-      // footnote 3 would render it as "1." under a marker reading "[3]".
-      const ol = def.parentElement;
-      if (ol && ol.instanceOf(HTMLOListElement)) {
-        const idx = Array.prototype.indexOf.call(ol.children, def);
-        if (idx >= 0) li.value = (ol.start || 1) + idx;
-      }
-      li.setAttribute("tabindex", "-1");
-      list.appendChild(li);
-    });
-    if (!list.firstChild) return null;
-
+    // Appended now, not after the loop: `_scrub` below must see the items.
     section.appendChild(list);
+
+    const items: HTMLLIElement[] = [];
+    for (const def of defs) {
+      const li = el("li");
+      list.appendChild(li);
+      // `sourcePath` is the *resolved* file, so a link or embed inside a
+      // footnote resolves against the note the footnote came from — which is
+      // the embedded note, not the host, when the table sits in an embed.
+      await MarkdownRenderer.render(this.app, def.markdown, li, sourcePath, component);
+      // The overlay may have closed (or been closed and re-opened) while that
+      // awaited; the close already unloaded this component, and a newer one may
+      // now own the field, so bail without touching it.
+      if (this.fsComponent !== component) return null;
+      items.push(li);
+    }
+
+    // Deliberately before the ids below are stamped: `_scrub`'s `[id]` sweep
+    // exempts FN_IDENTIFIED (which includes `.footnotes li[id]`), and scrubbing
+    // first breaks that implicit coupling, so a future rename cannot silently
+    // start eating our own ids. It is still required — rendered markdown
+    // carries ids (headings, block refs, embedded content) that must not enter
+    // the document a second time.
     this._scrub(section);
-    return section;
+
+    defs.forEach((def, i) => {
+      const li = items[i];
+      li.id = prefix + def.fragment;
+      li.setAttribute("data-footnote-id", li.id);
+      // Programmatic focus target only; never in the tab order.
+      li.setAttribute("tabindex", "-1");
+      // The list is a *subset* of the note's definitions, so the numbering has
+      // to be carried explicitly — otherwise a table referencing only footnote
+      // 3 would render it as "1." under a marker reading "[3]".
+      li.value = def.num;
+      targets.set(li.id, li);
+
+      // One back-ref per marker occurrence *present in the clone*, keyed to
+      // that occurrence's own <sup> rather than to the href the occurrences
+      // share — so `[3]` and `[3-1]` get one back-ref each, landing on
+      // different anchors. Occurrences outside the table produce nothing, so a
+      // dead back-ref cannot exist by construction.
+      for (const ref of refs) {
+        if (ref.fragment !== def.fragment) continue;
+        const sup = ref.sup;
+        if (!sup || !sup.id) continue;
+        const back = el("a", "footnote-backref footnote-link");
+        back.textContent = "↩︎";
+        // Already namespaced — `_namespace` re-minted `sup.id` in place.
+        back.setAttribute("href", "#" + sup.id);
+        // A lone "↩︎" is a nameless link; name it after the footnote it
+        // returns from, as `_makeInert` does for the inert case.
+        const label = `각주 ${def.num} 참조로 돌아가기`;
+        back.setAttribute("aria-label", label);
+        back.title = label;
+        // Rendered markdown wraps a one-line definition in <p>, so appending to
+        // the <li> would drop the glyph onto its own line below the paragraph.
+        const last = li.lastElementChild;
+        const host = last && last.matches("p, li, blockquote, div") ? last : li;
+        host.appendChild(activeDocument.createTextNode(" "));
+        host.appendChild(back);
+      }
+    });
+
+    return list.firstChild ? section : null;
   }
 
   /*
@@ -1124,13 +1360,9 @@ class TableView {
     // with the clone (stray ":::"/"⋮" marks) plus any Lookout chrome.
     this._scrub(clone);
 
-    // Footnote definitions live outside the <table>, so they have to be carried
-    // in explicitly. `notes === null` is the common case and every failure case:
-    // no wrapper, no namespacing, no click handling. Only a table with no
-    // footnote markers at all is then byte-identical to the pre-footnote
-    // overlay — a table whose markers exist but cannot resolve still goes
-    // through `_degradeFootnotes`, which strips the identities `_scrub` was
-    // holding for `_namespace` and makes those markers inert.
+    // Footnote definitions live outside the <table> — in the note's *source* —
+    // so they arrive asynchronously. Everything that decides how the clone
+    // behaves is nevertheless settled here, synchronously:
     //
     // INVARIANT (detached-until-clean): everything that mints, strips or re-points a
     // footnote identity or a `#`-href runs while `overlay` is still detached, so the
@@ -1138,21 +1370,42 @@ class TableView {
     // cannot resolve inside the overlay ever reaches the body with a live href.
     // Namespacing must therefore precede hardening: hardening decides "dead" by
     // looking the anchor's (already namespaced) fragment up in `fsTargets`.
+    //
+    // The FN_ANCHOR test, not FN_REF: a clone carrying only a stray back-ref
+    // would otherwise skip namespacing and reach the body with a live `#fn-…`
+    // href into the note, which is the very thing this guard exists to stop.
+    // A table with no footnote anchor at all takes no wrapper, no attribute and
+    // no listeners — a byte-identical overlay to the pre-footnote one.
     let docEl: HTMLElement | null = null;
-    const notes = this._buildFootnotes(clone, this._collectDefs());
-    if (!notes) {
-      this._degradeFootnotes(clone);
+    let refs: FnRef[] = [];
+    let prefix = "";
+    let targets: Map<string, HTMLElement> | null = null;
+    let pending = false;
+    if (clone.querySelector(FN_ANCHOR) === null) {
       scroll.appendChild(clone);
     } else {
+      // Before `_namespace`, which rewrites the hrefs the raw fragments come from.
+      refs = this._collectRefs(clone);
+      prefix = `lookout-fs-${++fsSeq}-`;
+      // Namespace while still detached — see `_namespace`.
+      targets = this._namespace(clone, prefix);
+      this.fsTargets = targets;
       docEl = el("div", "lookout-fs-doc");
       docEl.appendChild(clone);
-      docEl.appendChild(notes);
       scroll.appendChild(docEl);
-      // Namespace while still detached — see `_namespace`.
-      this.fsTargets = this._namespace(docEl, `lookout-fs-${++fsSeq}-`);
-      this._hardenAnchors(docEl, this.fsTargets);
       overlay.addEventListener("click", this.onFsAnchorClick);
       overlay.addEventListener("auxclick", this.onFsAnchorClick);
+      if (refs.length === 0) {
+        // Markers exist but none carries a usable join key, so there is nothing
+        // to resolve: settle synchronously rather than start a promise.
+        this._hardenAnchors(docEl, targets);
+        overlay.setAttribute("data-lookout-fn", "none");
+      } else {
+        // Set before the overlay is attached, so the settle signal is never
+        // observed absent on a footnote-bearing overlay.
+        overlay.setAttribute("data-lookout-fn", "pending");
+        pending = true;
+      }
     }
 
     overlay.appendChild(scroll);
@@ -1186,6 +1439,65 @@ class TableView {
     activeDocument.addEventListener("keydown", this.onFsKeyDown, true);
     this.fsCloseByKeyboard = false;
     close.focus({ preventScroll: true });
+
+    // Last, and deliberately not awaited: `openFullscreen` runs from a click
+    // handler and nothing awaits it, so an `async` signature would only add an
+    // unhandled-rejection surface and would leave a window in which
+    // `if (this.overlay) return` does not yet cover a second call.
+    if (pending && docEl && targets) {
+      void this._attachFootnotes(overlay, docEl, refs, prefix, targets);
+    }
+  }
+
+  /*
+   * The asynchronous half: resolve the definitions from the note's source,
+   * render them, and settle `data-lookout-fn`. Everything the reader can touch
+   * already exists by the time this runs; only the `<section>` arrives late.
+   *
+   * `alive()` after every await is the complete guard — the captured `overlay`
+   * identity covers closed (`this.overlay === null`), closed-and-reopened (a
+   * different object) and unloaded (`this.destroyed`), and `isConnected` covers
+   * a detach by any other route. The `catch` exists because the only caller
+   * `void`s this: an unguarded rejection would be invisible and would leave
+   * `data-lookout-fn="pending"` as a terminal state, which it must never be.
+   *
+   * No failure raises a `Notice`, in any case. The failure is already announced
+   * in place, per marker — dotted underline and muted colour for sighted
+   * readers, `aria-disabled` plus a name containing the marker for assistive
+   * tech. A global toast would misreport what is a per-marker condition, and it
+   * would fire on every single open inside a surface that structurally has no
+   * file (a canvas, a popover).
+   */
+  private async _attachFootnotes(
+    overlay: HTMLElement,
+    docEl: HTMLElement,
+    refs: FnRef[],
+    prefix: string,
+    targets: Map<string, HTMLElement>
+  ): Promise<void> {
+    let section: HTMLElement | null = null;
+    const alive = () =>
+      !this.destroyed && this.overlay === overlay && overlay.isConnected;
+    try {
+      const { sourcePath, defs } = await this._resolveDefs(refs);
+      if (!alive()) return;
+      if (defs.length > 0) {
+        section = await this._buildFootnotes(defs, refs, prefix, targets, sourcePath);
+        if (!alive()) return;
+        if (section) docEl.appendChild(section);
+      }
+    } catch {
+      section = null;
+    } finally {
+      if (alive()) {
+        // Does byte-for-byte what the old degradation path did, with fewer
+        // branches: every anchor whose fragment is not in `targets` — a marker
+        // whose definition never resolved, a back-ref a rendered body brought
+        // along — goes inert here, markers and definitions in one sweep.
+        this._hardenAnchors(docEl, targets);
+        overlay.setAttribute("data-lookout-fn", section ? "ready" : "none");
+      }
+    }
   }
 
   /*
@@ -1211,6 +1523,34 @@ class TableView {
 
     const href = a.getAttribute("href") ?? "";
     const id = href.startsWith("#") ? href.slice(1) : "";
+
+    // Every footnote anchor is ours, resolved or not. Between "pending" and
+    // "ready" a namespaced marker points at a node that does not exist yet, and
+    // the browser default would set `location.hash` and push a history entry on
+    // the Obsidian window. An ordinary link in a cell carries no
+    // `.footnote-link`, so it keeps exactly the behaviour it always had.
+    if (a.matches(FN_ANCHOR)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (id && this.fsTargets?.has(id)) this._jumpTo(id);
+      return;
+    }
+
+    // A link inside a rendered footnote body (an internal link, an external
+    // URL) is left to Obsidian: the event path was computed at dispatch, so its
+    // own delegated handler still navigates. Full screen closes on the *next*
+    // turn — synchronously would tear down the overlay, and unload the
+    // Component owning this link's MarkdownRenderChild, mid-click — so the
+    // reader sees where they landed instead of finding the note moved under a
+    // still-open overlay after Escape.
+    if (a.closest(".lookout-fs-footnotes") && a.hasAttribute("href")) {
+      const ov = this.overlay;
+      window.setTimeout(() => {
+        if (this.overlay === ov) this.onCloseFs();
+      }, 0);
+      return;
+    }
+
     if (!id || !this.fsTargets || !this.fsTargets.has(id)) return;
 
     e.preventDefault();
@@ -1255,6 +1595,13 @@ class TableView {
       this.fsHighlightTimer = null;
     }
     activeDocument.removeEventListener("keydown", this.onFsKeyDown, true);
+    // Unload before the DOM goes: the component owns every MarkdownRenderChild
+    // the rendered definitions created, and nulling the field is also what
+    // tells a still-running render that its overlay is gone.
+    if (this.fsComponent) {
+      this.fsComponent.unload();
+      this.fsComponent = null;
+    }
     // Removing the overlay takes the click/auxclick/pointerdown listeners with it.
     this.overlay.remove();
     this.overlay = null;
@@ -1393,7 +1740,7 @@ export default class LookoutPlugin extends Plugin {
 
     table.setAttribute(PROCESSED, "1");
     const anchor = table.nextSibling; // captured before the table is moved into the host
-    const view = new TableView(table, { parent, anchor });
+    const view = new TableView(table, { parent, anchor, app: this.app });
     this.views.add(view);
   }
 
