@@ -56,6 +56,44 @@ if (manifest && versions) {
   }
 }
 
+/*
+ * styles.css: properties Obsidian's plugin CSS check rejects.
+ *
+ * That check maps each declared property to a caniuse feature and warns when
+ * the feature is not *fully* supported by the Chrome in the plugin's
+ * `minAppVersion`. The whole `text-decoration` family — shorthand and
+ * longhands alike — resolves to one feature that Chrome only partially
+ * supports, so no spelling of it passes; 1.2.1 shipped the longhands believing
+ * only the shorthand was flagged, and got the same warning back. Use a
+ * `border-bottom` for underline-like rules instead.
+ *
+ * This is a targeted guard, not a reimplementation of the reviewer's check:
+ * it encodes the one family we have actually been flagged on.
+ */
+const CSS_BANNED = [
+  [
+    /(^|[;{\s])text-decoration(-line|-style|-color|-thickness|-skip|-skip-ink)?\s*:/gm,
+    "Obsidian's CSS check flags the whole text-decoration family as only " +
+      "partially supported. Use `border-bottom: 1px dotted currentColor` " +
+      "(plus `padding-bottom` for offset) instead.",
+  ],
+];
+if (existsSync("styles.css")) {
+  const css = readFileSync("styles.css", "utf8");
+  // Comments carry the explanation of *why* these are banned; don't self-trip.
+  // Blank them out newline-for-newline so reported line numbers stay true.
+  const code = css.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+  let clean = true;
+  for (const [re, why] of CSS_BANNED) {
+    for (const m of code.matchAll(re)) {
+      const line = code.slice(0, m.index).split("\n").length;
+      fail(`styles.css:${line} uses \`${m[0].trim().replace(/:$/, "")}\`. ${why}`);
+      clean = false;
+    }
+  }
+  if (clean) ok("styles.css uses no unsupported browser features");
+}
+
 if (failed) {
   console.error("\nValidation failed.");
   process.exit(1);
