@@ -1,11 +1,36 @@
 <!doctype html>
 <!--
-  E2E fixture: a wide-ish table inside Obsidian's `.markdown-rendered` context.
+  E2E fixture: tables inside Obsidian's `.markdown-rendered` context.
   The runner injects the real styles.css and the built main.js (with an obsidian
   stub) on top of this. The CSS below is a minimal stand-in for the slice of
   Obsidian's theme that styles tables — it lives ONLY under `.markdown-rendered`,
   exactly like Obsidian's own table rules, so the test can prove the full-screen
   clone inherits the same styling as the inline table.
+
+  THE PREMISE THIS FIXTURE ENCODES (measured in a real vault, see the redesign):
+  a note's rendered `.footnotes` section is NOT in the DOM. Obsidian does not
+  render off-screen sections, and the definition section sits at the bottom of a
+  note while the table sits above it — so for every table but the note's last
+  one there is nothing to read, and in Live Preview there is never anything to
+  read. Definitions are therefore resolved from the note's SOURCE through
+  `metadataCache.getFileCache().footnotes` + `vault.cachedRead()`. Accordingly
+  **no root below renders a `.footnotes` section except `note-k`**, which is a
+  deliberate decoy: its rendered text differs from its source, and the overlay
+  must show the source.
+
+  FOOTNOTE MARKUP FIDELITY — copied byte-for-byte from a real vault:
+    <sup class="footnote-ref" id="fnref-N[-K]-<docId>" data-footnote-id="fnref-N[-K]-<docId>"><a
+      data-footref="<label>" href="#fn-N-<docId>" class="footnote-link"
+      target="_blank" rel="noopener nofollow">[N[-K]]</a></sup>
+  `data-footref` is the join key into the metadata cache (it equals
+  `footnotes[].id`, inline forms such as `[inline5` included). `target`/`rel`
+  are real and must be stripped from the clone, or a click in full screen opens
+  a browser window.
+
+  Each root has its OWN docId (`d9`, `db`, …) and its own `data-note-file`, which
+  the stub maps to a `TFile` + a source string in `window.__NOTES`. Sharing a
+  docId would put genuine duplicate ids in the fixture and make the dupe-id
+  invariant uncheckable.
 -->
 <html>
   <head>
@@ -34,10 +59,30 @@
         background-color: var(--background-secondary);
         font-weight: 600;
       }
+      /*
+       * note-g: a table far wider than the 1280px test viewport. The rule is
+       * keyed on a class, not on `#note-g`, so the width travels with the
+       * full-screen clone — which lives outside the note root.
+       */
+      .wide-col {
+        min-width: 220px;
+      }
     </style>
   </head>
   <body>
-    <div class="markdown-rendered">
+    <!--
+      note-a — THE REGRESSION ROOT. No `.footnotes` section anywhere: this is
+      what Reading view actually looks like for any table that is not the note's
+      last one, and the configuration the previous implementation could not
+      handle at all.
+
+      Table 1 has no footnotes (theme/layout parity + the byte-identical
+      overlay). Table 2 carries one reference-style marker, and the same
+      footnote is referenced again from the paragraph BELOW the table — that
+      occurrence must produce no back-ref, because its <sup> never enters the
+      overlay.
+    -->
+    <div class="markdown-rendered" id="note-a" data-note-file="note-a.md">
       <table>
         <thead>
           <tr><th>A</th><th>B</th><th>C</th></tr>
@@ -47,6 +92,669 @@
           <tr><td>4</td><td>five</td><td>six</td></tr>
         </tbody>
       </table>
+
+      <table id="fn-table">
+        <thead>
+          <tr><th>A</th><th>B</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>x<sup class="footnote-ref" id="fnref-1-d9" data-footnote-id="fnref-1-d9"><a data-footref="ref" href="#fn-1-d9" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Prose referring to the same footnote<sup class="footnote-ref" id="fnref-1-1-d9" data-footnote-id="fnref-1-1-d9"><a data-footref="ref" href="#fn-1-d9" class="footnote-link" target="_blank" rel="noopener nofollow">[1-1]</a></sup>.</p>
     </div>
+
+    <!-- note-b: the file has no metadata cache at all (canvas-ish / unindexed). -->
+    <div class="markdown-rendered" id="note-b" data-note-file="note-b.md">
+      <table>
+        <thead>
+          <tr><th>A</th><th>B</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>y<sup class="footnote-ref" id="fnref-1-db" data-footnote-id="fnref-1-db"><a data-footref="ghost" href="#fn-1-db" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- note-c: one label is in the cache, one ("nope") is not. -->
+    <div class="markdown-rendered" id="note-c" data-note-file="note-c.md">
+      <table>
+        <thead>
+          <tr><th>A</th><th>B</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ok<sup class="footnote-ref" id="fnref-1-dc" data-footnote-id="fnref-1-dc"><a data-footref="ok" href="#fn-1-dc" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+            <td>gone<sup class="footnote-ref" id="fnref-9-dc" data-footnote-id="fnref-9-dc"><a data-footref="nope" href="#fn-9-dc" class="footnote-link" target="_blank" rel="noopener nofollow">[9]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      note-d: a non-1-based subset in deliberately reversed order — the table
+      references 5 before 3, so a list that followed reference order would count
+      downwards. The emitted list must read 3. then 5.
+    -->
+    <div class="markdown-rendered" id="note-d" data-note-file="note-d.md">
+      <table>
+        <thead>
+          <tr><th>A</th><th>B</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>higher first<sup class="footnote-ref" id="fnref-5-dd" data-footnote-id="fnref-5-dd"><a data-footref="late" href="#fn-5-dd" class="footnote-link" target="_blank" rel="noopener nofollow">[5]</a></sup></td>
+            <td>lower second<sup class="footnote-ref" id="fnref-3-dd" data-footnote-id="fnref-3-dd"><a data-footref="early" href="#fn-3-dd" class="footnote-link" target="_blank" rel="noopener nofollow">[3]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      A cell whose svg styles itself through its own id, next to an ordinary
+      id-bearing element: the clone must keep the first and drop the second.
+    -->
+    <div class="markdown-rendered" id="note-e" data-note-file="note-e.md">
+      <table>
+        <thead>
+          <tr><th>A</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <svg id="probe-svg" width="40" height="20" xmlns="http://www.w3.org/2000/svg">
+                <style>#probe-svg .box { fill: rgb(0, 128, 0); }</style>
+                <rect class="box" x="0" y="0" width="40" height="20"></rect>
+              </svg>
+              <div id="stray">stray</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      A Mermaid diagram inside a CELL. Lookout processes it on load and stamps
+      inline sizing onto the live svg, so the clone must have that sizing reset
+      and Lookout's own chrome unwrapped, or a 1600px diagram overflows.
+    -->
+    <div class="markdown-rendered" id="note-f" data-note-file="note-f.md">
+      <table>
+        <thead>
+          <tr><th>A</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="mermaid">
+                <svg viewBox="0 0 1600 1000" width="1600" height="1000" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="0" y="0" width="1600" height="1000" fill="#345"></rect>
+                </svg>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- A ~2200px-wide table whose one-sentence footnote must still read well. -->
+    <div class="markdown-rendered" id="note-g" data-note-file="note-g.md">
+      <table>
+        <thead>
+          <tr>
+            <th class="wide-col">c1</th><th class="wide-col">c2</th><th class="wide-col">c3</th>
+            <th class="wide-col">c4</th><th class="wide-col">c5</th><th class="wide-col">c6</th>
+            <th class="wide-col">c7</th><th class="wide-col">c8</th><th class="wide-col">c9</th>
+            <th class="wide-col">c10</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="wide-col">w<sup class="footnote-ref" id="fnref-1-dg" data-footnote-id="fnref-1-dg"><a data-footref="wide" href="#fn-1-dg" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+            <td class="wide-col">b</td><td class="wide-col">c</td><td class="wide-col">d</td>
+            <td class="wide-col">e</td><td class="wide-col">f</td><td class="wide-col">g</td>
+            <td class="wide-col">h</td><td class="wide-col">i</td><td class="wide-col">j</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      note-h: a multi-line definition whose continuation lines are indented four
+      spaces in the source and contain a ```mermaid fence. Without the dedent the
+      fence parses as an indented code block — a grey blob, not a diagram.
+    -->
+    <div class="markdown-rendered" id="note-h" data-note-file="note-h.md">
+      <table>
+        <thead>
+          <tr><th>흐름</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>배포 절차<sup class="footnote-ref" id="fnref-1-dh" data-footnote-id="fnref-1-dh"><a data-footref="flow" href="#fn-1-dh" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      note-i: the same footnote referenced twice inside one table. Both markers
+      share `#fn-3-di` and the label `dup`; their <sup> ids differ. One <li>,
+      two live back-refs, each landing on its own marker.
+    -->
+    <div class="markdown-rendered" id="note-i" data-note-file="note-i.md">
+      <table>
+        <thead>
+          <tr><th>왼쪽</th><th>오른쪽</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>첫 번째<sup class="footnote-ref" id="fnref-3-di" data-footnote-id="fnref-3-di"><a data-footref="dup" href="#fn-3-di" class="footnote-link" target="_blank" rel="noopener nofollow">[3]</a></sup></td>
+            <td>두 번째<sup class="footnote-ref" id="fnref-3-1-di" data-footnote-id="fnref-3-1-di"><a data-footref="dup" href="#fn-3-di" class="footnote-link" target="_blank" rel="noopener nofollow">[3-1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      note-j: an INLINE footnote. Its cache id is the regex-hostile `[inline5`,
+      and its source slice carries neither the `^[` nor the `]` — it must render
+      verbatim, with nothing stripped.
+    -->
+    <div class="markdown-rendered" id="note-j" data-note-file="note-j.md">
+      <table>
+        <thead>
+          <tr><th>값</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>6<sup class="footnote-ref" id="fnref-6-dj" data-footnote-id="fnref-6-dj"><a data-footref="[inline5" href="#fn-6-dj" class="footnote-link" target="_blank" rel="noopener nofollow">[6]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      note-k: THE DECOY. This root does render a `.footnotes` section (it is the
+      note's last table, the one case where Obsidian has it on screen), but its
+      visible text differs from the note's source. The overlay must show the
+      SOURCE text — that is the proof the rendered DOM is no longer consulted —
+      and the note's own <li> must come through untouched.
+    -->
+    <div class="markdown-rendered" id="note-k" data-note-file="note-k.md">
+      <table>
+        <thead>
+          <tr><th>A</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>decoy<sup class="footnote-ref" id="fnref-1-dk" data-footnote-id="fnref-1-dk"><a data-footref="decoy" href="#fn-1-dk" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+      <section class="footnotes">
+        <hr>
+        <ol>
+          <li id="fn-1-dk" data-footnote-id="fn-1-dk">DOM에서 읽으면 안 되는 옛 본문. <a href="#fnref-1-dk" class="footnote-backref footnote-link">↩︎</a></li>
+        </ol>
+      </section>
+    </div>
+
+    <!--
+      note-lp: the Live Preview shape — a `.markdown-source-view` leaf whose
+      table is a CodeMirror widget. Reference-style markers do not exist here at
+      all (Obsidian parses the block in isolation and degrades them to plain
+      text). An inline footnote IS self-contained inside the block and renders
+      as a real marker, but its identifier counts within that block-sized parse:
+      the note's source has an inline footnote in the paragraph ABOVE the table,
+      so the metadata cache calls the table's `[inline1` while the widget emits
+      `data-footref="[inline0"` — the file-wide and block-local numbers disagree
+      by exactly the count above the block. Joining them would put the
+      PARAGRAPH's text under the TABLE's marker, so the join is refused and the
+      marker goes inert. That is the whole of Live Preview footnote support.
+
+      This root is the reason the previous fixture was not discriminating: it
+      declared a single footnote, which is both the block's first and the file's
+      first, i.e. the one configuration in which the wrong join is accidentally
+      right.
+    -->
+    <div class="markdown-source-view mod-cm6" id="note-lp" data-note-file="note-lp.md">
+      <div class="cm-embed-block cm-table-widget markdown-rendered">
+        <table>
+          <thead>
+            <tr><th>항목</th><th>값</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>응답률</td>
+              <td>62%<sup class="footnote-ref" id="fnref-1-dl" data-footnote-id="fnref-1-dl"><a data-footref="[inline0" href="#fn-1-dl" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!--
+      note-m: a table inside an EMBED of another note. Its footnote must resolve
+      against the EMBEDDED file. The host note defines a footnote with the same
+      label and different text on purpose: if the host is ever used as a
+      fallback, the wrong text appears under the right marker and this fails.
+    -->
+    <div class="markdown-rendered" id="note-m" data-note-file="note-m.md">
+      <div class="internal-embed markdown-embed" src="embedded">
+        <div class="markdown-embed-content markdown-rendered">
+          <table>
+            <thead>
+              <tr><th>A</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>emb<sup class="footnote-ref" id="fnref-1-dm" data-footnote-id="fnref-1-dm"><a data-footref="emb" href="#fn-1-dm" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      note-n: an embed whose `src` resolves to nothing. No file, no guessing —
+      and the HOST note deliberately defines the very label the embedded marker
+      carries, so falling back to the host would show its text here. That is the
+      forbidden failure (wrong text under a right marker), and without the host
+      definition below the fallback would resolve nothing and the test could not
+      see it.
+    -->
+    <div class="markdown-rendered" id="note-n" data-note-file="note-n.md">
+      <div class="internal-embed markdown-embed" src="missing#heading">
+        <div class="markdown-embed-content markdown-rendered">
+          <table>
+            <thead>
+              <tr><th>A</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>gone<sup class="footnote-ref" id="fnref-1-dn" data-footnote-id="fnref-1-dn"><a data-footref="nowhere" href="#fn-1-dn" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      note-p: an embed whose `src` is a bare fragment (`#heading`) — the link
+      points inside the host note itself, so there is no linkpath to resolve.
+      The empty-linkpath branch must return "no file" rather than the host.
+    -->
+    <div class="markdown-rendered" id="note-p" data-note-file="note-p.md">
+      <div class="internal-embed markdown-embed" src="#heading">
+        <div class="markdown-embed-content markdown-rendered">
+          <table>
+            <thead>
+              <tr><th>A</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>frag<sup class="footnote-ref" id="fnref-1-dp" data-footnote-id="fnref-1-dp"><a data-footref="selfref" href="#fn-1-dp" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      note-q: three markers that carry no usable join key, so NOTHING may be
+      resolved and nothing may even be read:
+        [1]  no `data-footref` at all (neither on the <a> nor on the <sup>);
+        [2]  `href="#"` — a marker with no fragment to key on;
+        [없음] a number that parses from neither the href nor the link text.
+      The note's cache defines the two labels the last two carry, so any of
+      these three guards going missing shows up as a rendered definition — and
+      the overlay must settle to "none" SYNCHRONOUSLY, without a single
+      `cachedRead`, because there is nothing to resolve.
+    -->
+    <div class="markdown-rendered" id="note-q" data-note-file="note-q.md">
+      <table>
+        <thead>
+          <tr><th>A</th><th>B</th><th>C</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>a<sup class="footnote-ref" id="fnref-1-dq" data-footnote-id="fnref-1-dq"><a href="#fn-1-dq" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+            <td>b<sup class="footnote-ref" id="fnref-2-dq" data-footnote-id="fnref-2-dq"><a data-footref="empty" href="#" class="footnote-link" target="_blank" rel="noopener nofollow">[2]</a></sup></td>
+            <td>c<sup class="footnote-ref" id="fnref-3-dq" data-footnote-id="fnref-3-dq"><a data-footref="odd" href="#custom-anchor" class="footnote-link" target="_blank" rel="noopener nofollow">[없음]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      note-r: a renderer that does not use the `fn-<N>-<docId>` href shape. The
+      number has to come from the visible "[7]" instead, and the definition must
+      be numbered 7 — not 1, and not dropped.
+    -->
+    <div class="markdown-rendered" id="note-r" data-note-file="note-r.md">
+      <table>
+        <thead>
+          <tr><th>A</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>seven<sup class="footnote-ref" id="fnref-7-dr" data-footnote-id="fnref-7-dr"><a data-footref="odd7" href="#custom-anchor-7" class="footnote-link" target="_blank" rel="noopener nofollow">[7]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      note-s: a STALE metadata index. `getFileCache` is read synchronously while
+      `cachedRead` is awaited, so between an edit and the reindex the offsets
+      describe a file that no longer exists. The fixture reproduces that with
+      per-footnote `shift`s (see `__NOTES`), on both id shapes:
+        [1] good          — honest offsets, must build
+        [2] padded inline — honest offsets, `^[ body ]` with padding, must build
+        [3] stale ref     — offsets moved, no `[^stale]` label where they point
+        [4] stale inline  — offsets moved, no `^[` … `]` around where they point
+        [5] blank         — a definition whose body is whitespace only
+      One bad footnote may never collapse the section, and a bad one may never
+      render whatever prose its stale offsets happen to land on.
+    -->
+    <div class="markdown-rendered" id="note-s" data-note-file="note-s.md">
+      <table>
+        <thead>
+          <tr><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>정상<sup class="footnote-ref" id="fnref-1-ds" data-footnote-id="fnref-1-ds"><a data-footref="good" href="#fn-1-ds" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+            <td>여백<sup class="footnote-ref" id="fnref-2-ds" data-footnote-id="fnref-2-ds"><a data-footref="[inline0" href="#fn-2-ds" class="footnote-link" target="_blank" rel="noopener nofollow">[2]</a></sup></td>
+            <td>어긋남<sup class="footnote-ref" id="fnref-3-ds" data-footnote-id="fnref-3-ds"><a data-footref="stale" href="#fn-3-ds" class="footnote-link" target="_blank" rel="noopener nofollow">[3]</a></sup></td>
+            <td>인라인<sup class="footnote-ref" id="fnref-4-ds" data-footnote-id="fnref-4-ds"><a data-footref="[inline1" href="#fn-4-ds" class="footnote-link" target="_blank" rel="noopener nofollow">[4]</a></sup></td>
+            <td>빈<sup class="footnote-ref" id="fnref-5-ds" data-footnote-id="fnref-5-ds"><a data-footref="blank" href="#fn-5-ds" class="footnote-link" target="_blank" rel="noopener nofollow">[5]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      note-t: a cached END offset that runs past the end of the file — the other
+      shape a stale index takes. `String.slice` silently clamps it, so without
+      the bounds check the definition would swallow everything after it (here,
+      the NEXT definition's text) and render that as its body.
+    -->
+    <div class="markdown-rendered" id="note-t" data-note-file="note-t.md">
+      <table>
+        <thead>
+          <tr><th>A</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>oob<sup class="footnote-ref" id="fnref-1-dt" data-footnote-id="fnref-1-dt"><a data-footref="mid" href="#fn-1-dt" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!--
+      note-u: a definition body that carries ids of its own — a heading and a
+      `^block-id` paragraph, both of which a real renderer stamps ids onto. They
+      must not enter the document a second time; `blk-1` also exists in this
+      note outside the table, so a missed scrub is a genuine duplicate id.
+    -->
+    <div class="markdown-rendered" id="note-u" data-note-file="note-u.md">
+      <table>
+        <thead>
+          <tr><th>A</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>rich<sup class="footnote-ref" id="fnref-1-du" data-footnote-id="fnref-1-du"><a data-footref="rich" href="#fn-1-du" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+      <p id="blk-1">이 문단이 노트 안의 blk-1이다.</p>
+    </div>
+
+    <!--
+      note-o: a footnote body containing an internal link. Clicking it must let
+      Obsidian navigate AND close the overlay (on the next turn, so the click is
+      still delivered against a live DOM).
+    -->
+    <div class="markdown-rendered" id="note-o" data-note-file="note-o.md">
+      <table>
+        <thead>
+          <tr><th>A</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>link<sup class="footnote-ref" id="fnref-1-do" data-footnote-id="fnref-1-do"><a data-footref="link" href="#fn-1-do" class="footnote-link" target="_blank" rel="noopener nofollow">[1]</a></sup></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <script>
+      /*
+       * The note SOURCES. The stub's `cachedRead` returns these verbatim and
+       * `getFileCache` derives every footnote offset with `indexOf` over the
+       * very same string, so the offsets can never drift from the text.
+       * `cache: null` means the file has no metadata cache at all.
+       */
+      const L = (...lines) => lines.join("\n");
+      window.__NOTES = {
+        "note-a.md": {
+          source: L(
+            "| A | B |",
+            "| --- | --- |",
+            "| 1 | x[^ref] |",
+            "",
+            "이 문단도 같은 각주를 참조한다 [^ref].",
+            "",
+            "[^ref]: 표와 문단 양쪽에서 참조되는 각주."
+          ),
+          footnotes: [{ id: "ref", slice: "[^ref]: 표와 문단 양쪽에서 참조되는 각주." }],
+        },
+        "note-b.md": { source: "| A | B |\n| --- | --- |\n| 1 | y[^ghost] |", cache: null },
+        "note-c.md": {
+          source: L("| A | B |", "| --- | --- |", "| ok[^ok] | gone[^nope] |", "", "[^ok]: 이 노트가 정의한 유일한 각주."),
+          footnotes: [{ id: "ok", slice: "[^ok]: 이 노트가 정의한 유일한 각주." }],
+        },
+        "note-d.md": {
+          source: L(
+            "이 문단이 먼저 참조한다 [^early].",
+            "",
+            "| A | B |",
+            "| --- | --- |",
+            "| 높은 번호 먼저 [^late] | 낮은 번호 나중 [^early] |",
+            "",
+            "[^early]: 앞선 문단이 먼저 참조해 낮은 번호를 받는다.",
+            "[^late]: 표 안에서만 참조되므로 더 높은 번호를 받는다."
+          ),
+          footnotes: [
+            { id: "early", slice: "[^early]: 앞선 문단이 먼저 참조해 낮은 번호를 받는다." },
+            { id: "late", slice: "[^late]: 표 안에서만 참조되므로 더 높은 번호를 받는다." },
+          ],
+        },
+        "note-e.md": { source: "| A |\n| --- |\n| svg |", footnotes: [] },
+        "note-f.md": { source: "| A |\n| --- |\n| diagram |", footnotes: [] },
+        "note-g.md": {
+          source: L("| c1 |", "| --- |", "| w[^wide] |", "", "[^wide]: 아주 넓은 표에 붙은 한 문장짜리 각주인데, 본문이 표 너비를 따라가면 안 된다."),
+          footnotes: [
+            { id: "wide", slice: "[^wide]: 아주 넓은 표에 붙은 한 문장짜리 각주인데, 본문이 표 너비를 따라가면 안 된다." },
+          ],
+        },
+        "note-h.md": {
+          source: L(
+            "| 흐름 |",
+            "| --- |",
+            "| 배포 절차 [^flow] |",
+            "",
+            "[^flow]: 배포는 아래 순서로 진행한다.",
+            "",
+            "    ```mermaid",
+            "    graph LR",
+            "      A[빌드] --> B[검증]",
+            "      B --> C[배포]",
+            "    ```"
+          ),
+          footnotes: [
+            {
+              id: "flow",
+              slice: L(
+                "[^flow]: 배포는 아래 순서로 진행한다.",
+                "",
+                "    ```mermaid",
+                "    graph LR",
+                "      A[빌드] --> B[검증]",
+                "      B --> C[배포]",
+                "    ```"
+              ),
+            },
+          ],
+        },
+        "note-i.md": {
+          source: L("| 왼쪽 | 오른쪽 |", "| --- | --- |", "| 첫 번째 [^dup] | 두 번째 [^dup] |", "", "[^dup]: 표 안에서 두 번 참조되는 각주."),
+          footnotes: [{ id: "dup", slice: "[^dup]: 표 안에서 두 번 참조되는 각주." }],
+        },
+        "note-j.md": {
+          source: L("| 값 |", "| --- |", "| 6 ^[넓은 표에 붙은 짧은 각주 한 문장.] |"),
+          // An inline footnote's cached position covers the BODY only: no `^[`,
+          // no `]`, and no `[^id]:` label to strip.
+          footnotes: [{ id: "[inline5", slice: "넓은 표에 붙은 짧은 각주 한 문장." }],
+        },
+        "note-k.md": {
+          source: L("| A |", "| --- |", "| decoy[^decoy] |", "", "[^decoy]: 소스에서 읽어야 하는 진짜 본문."),
+          footnotes: [{ id: "decoy", slice: "[^decoy]: 소스에서 읽어야 하는 진짜 본문." }],
+        },
+        // The realistic Live Preview shape: the note's FIRST inline footnote is
+        // in the paragraph above the table, so the cache calls the table's one
+        // `[inline1` while the block-sized parse behind the widget emits
+        // `[inline0`. The two numbering schemes disagree, and the join must be
+        // refused rather than guessed.
+        "note-lp.md": {
+          source: L(
+            "머리말 ^[문단에 붙은 각주 — 표와는 아무 상관이 없다.]",
+            "",
+            "| 항목 | 값 |",
+            "| --- | --- |",
+            "| 응답률 | 62% ^[표본 정리 전 기준이라 최종 수치와 다를 수 있다.] |"
+          ),
+          footnotes: [
+            { id: "[inline0", slice: "문단에 붙은 각주 — 표와는 아무 상관이 없다." },
+            { id: "[inline1", slice: "표본 정리 전 기준이라 최종 수치와 다를 수 있다." },
+          ],
+        },
+        "note-m.md": {
+          source: L("![[embedded]]", "", "[^emb]: 호스트 노트의 각주 본문 — 절대 보이면 안 된다."),
+          footnotes: [{ id: "emb", slice: "[^emb]: 호스트 노트의 각주 본문 — 절대 보이면 안 된다." }],
+        },
+        "embedded.md": {
+          source: L("| A |", "| --- |", "| emb[^emb] |", "", "[^emb]: 임베드된 노트의 각주 본문."),
+          footnotes: [{ id: "emb", slice: "[^emb]: 임베드된 노트의 각주 본문." }],
+        },
+        // The host defines the very label the embedded marker carries, so a
+        // fallback to the host would render THIS text under it.
+        "note-n.md": {
+          source: L("![[missing#heading]]", "", "[^nowhere]: 호스트 노트의 각주 — 절대 보이면 안 된다."),
+          footnotes: [{ id: "nowhere", slice: "[^nowhere]: 호스트 노트의 각주 — 절대 보이면 안 된다." }],
+        },
+        "note-o.md": {
+          source: L("| A |", "| --- |", "| link[^link] |", "", "[^link]: 자세한 내용은 [다른 노트](other.md)를 참고한다."),
+          footnotes: [{ id: "link", slice: "[^link]: 자세한 내용은 [다른 노트](other.md)를 참고한다." }],
+        },
+        // Same trap as note-n, for the embed whose src has no linkpath at all.
+        "note-p.md": {
+          source: L("![[#heading]]", "", "[^selfref]: 호스트 노트의 각주 — 절대 보이면 안 된다."),
+          footnotes: [{ id: "selfref", slice: "[^selfref]: 호스트 노트의 각주 — 절대 보이면 안 된다." }],
+        },
+        // Both labels ARE defined: if a marker without a usable join key were
+        // recorded anyway, one of these would render.
+        "note-q.md": {
+          source: L(
+            "| A | B | C |",
+            "| --- | --- | --- |",
+            "| a[^1] | b[^empty] | c[^odd] |",
+            "",
+            "[^empty]: 이 정의가 보이면 회귀다.",
+            "[^odd]: 이 정의도 보이면 회귀다."
+          ),
+          footnotes: [
+            { id: "empty", slice: "[^empty]: 이 정의가 보이면 회귀다." },
+            { id: "odd", slice: "[^odd]: 이 정의도 보이면 회귀다." },
+          ],
+        },
+        "note-r.md": {
+          source: L("| A |", "| --- |", "| seven[^odd7] |", "", "[^odd7]: 링크 주소로는 번호를 알 수 없는 각주."),
+          footnotes: [{ id: "odd7", slice: "[^odd7]: 링크 주소로는 번호를 알 수 없는 각주." }],
+        },
+        // `shift` moves the cached START offset away from the text it names,
+        // which is exactly what a metadata index lagging the file content does.
+        "note-s.md": {
+          source: L(
+            "| A | B | C | D | E |",
+            "| --- | --- | --- | --- | --- |",
+            "| 정상 [^good] | 여백 ^[ 여백을 낀 인라인 각주. ] | 어긋남 [^stale] | 인라인 ^[또 다른 인라인 각주.] | 빈 [^blank] |",
+            "",
+            "[^good]: 온전히 살아남아야 하는 정의.",
+            "[^stale]: 어긋난 오프셋이 가리키면 안 되는 정의.",
+            "[^blank]:   "
+          ),
+          footnotes: [
+            { id: "good", slice: "[^good]: 온전히 살아남아야 하는 정의." },
+            { id: "[inline0", slice: "여백을 낀 인라인 각주." },
+            { id: "stale", slice: "[^stale]: 어긋난 오프셋이 가리키면 안 되는 정의.", shift: 9 },
+            { id: "[inline1", slice: "또 다른 인라인 각주.", shift: 4 },
+            { id: "blank", slice: "[^blank]:   " },
+          ],
+        },
+        // `endShift` runs the cached END offset past EOF. `String.slice` clamps
+        // it, so an unchecked slice swallows the definition that follows.
+        "note-t.md": {
+          source: L(
+            "| A |",
+            "| --- |",
+            "| oob[^mid] |",
+            "",
+            "[^mid]: 이 정의의 끝 오프셋이 파일 밖을 가리킨다.",
+            "[^tail]: 뒤따르는 다른 정의 — 앞 각주의 본문으로 새어 나오면 안 된다."
+          ),
+          footnotes: [
+            {
+              id: "mid",
+              slice: "[^mid]: 이 정의의 끝 오프셋이 파일 밖을 가리킨다.",
+              endShift: 200,
+            },
+            { id: "tail", slice: "[^tail]: 뒤따르는 다른 정의 — 앞 각주의 본문으로 새어 나오면 안 된다." },
+          ],
+        },
+        // A definition body that a real renderer stamps ids onto: a heading and
+        // a `^block-id` paragraph.
+        "note-u.md": {
+          source: L(
+            "| A |",
+            "| --- |",
+            "| rich [^rich] |",
+            "",
+            "[^rich]: ### 각주 안 제목",
+            "",
+            "    본문 문단이다. ^blk-1"
+          ),
+          footnotes: [
+            {
+              id: "rich",
+              slice: L("[^rich]: ### 각주 안 제목", "", "    본문 문단이다. ^blk-1"),
+            },
+          ],
+        },
+      };
+    </script>
   </body>
 </html>

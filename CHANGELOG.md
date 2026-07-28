@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-28
+
+### Added
+
+- Full-screen tables now support **footnotes** ([#28]). A cell's footnote marker
+  used to survive into the full-screen view as a dead `[1]`: the definitions
+  live outside the `<table>` the overlay clones, so there was nothing to show
+  and nothing to jump to. The definitions a table actually references are now
+  resolved from the note's own **source** through Obsidian's metadata cache and
+  rendered under the clone, so they appear no matter where the table sits in the
+  note — numbering preserved, so a table referencing only footnote 3 still reads
+  "3." — and every footnote id and `#`-anchor is re-pointed into an
+  overlay-local namespace so the marker jumps to its definition and the "↩︎"
+  back-reference jumps back, all without leaving full screen or touching the
+  note's own footnote navigation. The footnote text is laid out at a readable
+  measure rather than at the table's width, so a narrow table no longer squeezes
+  it into a one-word-per-line ribbon.
+- Hovering a marker in full screen previews its definition. Obsidian gives a
+  footnote no hover affordance of its own, and in full screen the definition can
+  sit far below a long table, so the marker would otherwise be a number with
+  nothing behind it until clicked. The note's own markers are untouched.
+- Scope: footnotes resolve in **Reading view**. **Live Preview is not
+  supported**, because Obsidian parses each block there on its own: a
+  reference-style marker (`[^id]`) is not rendered inside a table widget at all
+  (the definition is outside that block, and the note itself shows the marker as
+  plain text), and an inline marker (`^[note]`) is numbered within its block
+  rather than within the note, so it cannot be matched to a definition — a
+  paragraph's footnote above the table would otherwise be rendered under the
+  table's marker. Where a definition cannot be resolved — that case, a footnote
+  referenced but never defined, a table in a surface with no backing file, or a
+  metadata index that has not caught up with the file — the marker stays visible
+  but is made plainly inert, and is exposed to assistive tech as a disabled link
+  carrying the reason, not by colour alone. Wrong footnote text under a right
+  marker is never shown.
+  A table with no footnotes at all builds exactly the overlay it did before.
+
+### Fixed
+
+- The full-screen clone no longer copies the live table's `id` attributes into
+  the document. A table carrying a `^block-id`, or anything id-bearing inside a
+  cell, previously appeared twice under the same id for as long as the overlay
+  was open — invalid DOM, and enough to send an in-note `#…` link to the clone
+  instead of the note. Ids inside an SVG a cell contains are deliberately kept:
+  id-scoped `<style>`, `<use>` and gradient/marker/clip-path references break
+  without them, and a duplicated svg-internal id resolves to an identical
+  definition.
+
+### Changed
+
+- Both full-screen views — diagrams and tables — are now proper modal surfaces.
+  They cover the workspace, but `Tab` used to walk straight out of them onto the
+  note's own links and buttons behind the overlay, so focus landed where the
+  reader could not see it and the next `Enter` activated it. `Tab` and
+  `Shift+Tab` now cycle within the overlay, and it identifies itself to
+  assistive tech as a labelled modal dialog.
+- The minimum supported Obsidian version is now **1.6.6**, the release that
+  exposes footnotes in the metadata cache — the single source full-screen
+  footnote definitions are read from.
+- Closing a full-screen table **from the keyboard** now returns focus to the
+  inline trigger button, which is made visible while it holds focus. Closing
+  with the mouse still leaves focus where it was, so Space keeps scrolling the
+  note rather than re-activating an invisible button. This affects every
+  full-screen table, not only footnoted ones.
+
 ## [1.1.7] - 2026-06-24
 
 ### Fixed
@@ -128,7 +192,9 @@ Initial public release.
   mode), not only in Reading view. The table being actively edited is left
   untouched.
 
-[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.1.3...HEAD
+[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/Post-Math/Lookout/compare/1.1.7...1.2.0
+[#28]: https://github.com/Post-Math/Lookout/issues/28
 [1.1.3]: https://github.com/Post-Math/Lookout/compare/1.1.2...1.1.3
 [1.1.2]: https://github.com/Post-Math/Lookout/compare/1.1.1...1.1.2
 [1.1.1]: https://github.com/Post-Math/Lookout/releases/tag/1.1.1
