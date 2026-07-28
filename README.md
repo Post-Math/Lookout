@@ -43,6 +43,24 @@ button (no zoom) pinned to the visible top-right corner. Full screen shows the
 table in a maximized scroll area where its full width fits far better than in the
 note's narrow reading column.
 
+If a cell carries a **footnote**, its definition is read from **the note's own
+source** through Obsidian's metadata cache and listed under the table, so it
+appears in full screen no matter where the table sits in the note. The marker
+jumps to its definition and the "↩︎" back-reference jumps back, without leaving
+the full-screen view.
+
+This works in **Reading view**, for both inline (`^[note]`) and reference-style
+(`[^id]`) footnotes. **Live Preview is not supported**, because it parses each
+block on its own: a reference-style marker is not rendered there at all (the
+note itself shows it as plain text, so there is nothing for Lookout to attach
+to), and an inline one is numbered within its block rather than within the note,
+which is not enough to tell which definition it belongs to. Showing a different
+footnote's text under the right marker would be worse than showing none, so the
+marker is left visible but plainly inert. The same happens to a footnote that is
+referenced but never defined, or a table in a surface with no backing file — in
+every case the marker is exposed to assistive tech as a disabled link carrying
+the reason.
+
 Tables are enhanced in both **Reading view** and **Live Preview**; the table you
 are actively editing is left untouched.
 
@@ -64,7 +82,7 @@ available from the command palette and can be bound to a hotkey.
 
 ## Installation
 
-Lookout works on both desktop and mobile (Obsidian **1.0.0+**).
+Lookout works on both desktop and mobile (Obsidian **1.6.6+**).
 
 ### Manual
 

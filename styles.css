@@ -298,7 +298,15 @@
   transition: opacity 0.15s ease, background-color 0.12s ease, color 0.12s ease;
 }
 
+/*
+ * `:focus` as well as `:focus-visible`. Closing the full-screen view from the
+ * keyboard hands focus back here, and that route already matches
+ * `:focus-visible`; the plain `:focus` is the safety net for any programmatic
+ * focus that does not, because a focused-but-invisible button is a control the
+ * reader cannot see they are about to activate with Space.
+ */
 .lookout-table-host:hover .lookout-table-btn,
+.lookout-table-btn:focus,
 .lookout-table-btn:focus-visible {
   opacity: 1;
 }
@@ -336,6 +344,112 @@
   height: max-content;
 }
 
+/*
+ * The full-screen table together with its footnote definitions. This wrapper
+ * only exists when at least one footnote resolves; otherwise the table stays
+ * the scroll container's single flex child exactly as before.
+ *
+ * Its width drives the footnote measure, so it must not simply hug the table:
+ *  - `width: max-content` lets it span a table *wider* than the viewport, so
+ *    the footnotes stay aligned with the table while panning right (it is
+ *    deliberately not capped at `max-width: 100%`, which would stop the section
+ *    and its divider at the viewport edge);
+ *  - `min-width` gives it a readable floor, so a *narrow* table cannot squeeze
+ *    the footnote text into a one-word-per-line ribbon — the note renders that
+ *    same text at full note width.
+ * The table is centered within that floor, so the container's
+ * `justify-content: safe center` still centers small tables as before.
+ */
+.lookout-table-fs-scroll .lookout-fs-doc {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  /* flex-shrink would otherwise clamp a wide wrapper back to the viewport. */
+  flex: none;
+  width: max-content;
+  min-width: min(100%, 60ch);
+}
+
+/*
+ * `width: 0` + `min-width: 100%` makes the section fill the wrapper without
+ * contributing to its max-content width — a long footnote must not widen (and
+ * so off-center) the table above it. Same two-class-under-container trick as
+ * the table rule above: enough specificity to outrank the theme's bare
+ * `.footnotes` styles without !important.
+ */
+.lookout-table-fs-scroll .lookout-fs-footnotes {
+  width: 0;
+  min-width: 100%;
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.lookout-table-fs-scroll .lookout-fs-footnotes ol {
+  margin: 0;
+  padding-inline-start: 1.6em;
+  /* The section spans the table by design (its divider is the table's rule),
+     but the prose inside it must not: a 2200px table would otherwise lay a
+     one-sentence footnote out as a single 2200px line. 70ch sits above the
+     wrapper's 60ch floor, so narrow tables are unaffected. */
+  max-width: 70ch;
+}
+
+/* Media inside a cloned definition (e.g. an already-processed Mermaid svg) must
+   not widen the overlay's scroll container. */
+.lookout-table-fs-scroll .lookout-fs-footnotes :is(img, svg, video, canvas) {
+  max-width: 100%;
+  height: auto;
+}
+
+.lookout-table-fs-scroll .lookout-fs-footnotes li {
+  scroll-margin-top: 72px; /* clear the fixed close button when jumped to */
+}
+
+/* MarkdownRenderer wraps a definition's first block in <p>; the cloned <li>
+   contents used to be inline, so trim the outer margins to keep the list tight. */
+.lookout-table-fs-scroll .lookout-fs-footnotes li > p:first-child {
+  margin-top: 0;
+}
+
+.lookout-table-fs-scroll .lookout-fs-footnotes li > p:last-child {
+  margin-bottom: 0;
+}
+
+/* Pointer-driven jumps focus the li programmatically and need no ring; a
+   keyboard-driven jump must keep one after `.is-lookout-target` expires. */
+.lookout-table-fs-scroll .lookout-fs-footnotes li:focus {
+  outline: none;
+}
+
+.lookout-table-fs-scroll .lookout-fs-footnotes li:focus-visible {
+  outline: 2px solid var(--lookout-accent);
+  outline-offset: 2px;
+}
+
+.lookout-table-fs-scroll .is-lookout-target {
+  background-color: color-mix(in srgb, var(--lookout-accent) 14%, transparent);
+  border-radius: 4px;
+  transition: background-color 0.18s ease;
+}
+
+/*
+ * A marker whose definition could not be resolved: visible, but plainly inert.
+ * The dotted underline is the point: muting the colour alone would leave the
+ * only cue that a marker is deliberately dead to colour perception, and
+ * `cursor`/`title` say nothing until the pointer is already on it. Obsidian
+ * renders `.footnote-link` without an underline, so the dots read as "not the
+ * live thing" rather than as ordinary link styling.
+ */
+.lookout-table-fs-scroll .lookout-fn-unresolved {
+  color: var(--text-muted);
+  cursor: default;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
 .lookout-fs-close {
   position: fixed;
   top: 16px;
@@ -362,5 +476,8 @@
   }
   .lookout-fs {
     animation: none;
+  }
+  .lookout-table-fs-scroll .is-lookout-target {
+    transition: none;
   }
 }
