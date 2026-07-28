@@ -1122,6 +1122,17 @@ class TableView {
    * indented 8 spaces (a nested list) must keep 4, and a lazily continued line
    * with 0–3 spaces must be left alone.
    */
+  /*
+   * A definition's rendered text, flattened to one line for a `title` tooltip.
+   * Capped because a native tooltip has no scroll and a long footnote would
+   * paint a wall across the overlay; the full text is always one click away in
+   * the list below the table.
+   */
+  _previewText(li: HTMLElement): string {
+    const text = (li.textContent || "").replace(/\s+/g, " ").trim();
+    return text.length > 300 ? text.slice(0, 299).trimEnd() + "…" : text;
+  }
+
   _dedent(text: string): string {
     const lines = text.split("\n");
     for (let i = 1; i < lines.length; i++) {
@@ -1280,6 +1291,10 @@ class TableView {
       li.value = def.num;
       targets.set(li.id, li);
 
+      // Read before the back-refs below are appended, so the preview does not
+      // trail a "↩︎" that means nothing out of context.
+      const preview = this._previewText(li);
+
       // One back-ref per marker occurrence *present in the clone*, keyed to
       // that occurrence's own <sup> rather than to the href the occurrences
       // share — so `[3]` and `[3-1]` get one back-ref each, landing on
@@ -1287,6 +1302,14 @@ class TableView {
       // dead back-ref cannot exist by construction.
       for (const ref of refs) {
         if (ref.fragment !== def.fragment) continue;
+        // Hovering a marker shows what it points at. Obsidian gives a footnote
+        // no hover affordance of its own — its only footnote handler is a click
+        // delegated on the note's preview sizer, which never sees this overlay
+        // — and in full screen the definition can sit far below a long table,
+        // so the marker is otherwise a number with nothing behind it until you
+        // click. A plain `title` buys that: native, no listener, nothing to
+        // clean up on close.
+        if (preview) ref.a.title = preview;
         const sup = ref.sup;
         if (!sup || !sup.id) continue;
         const back = el("a", "footnote-backref footnote-link");

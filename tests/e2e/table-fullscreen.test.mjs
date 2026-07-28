@@ -419,6 +419,11 @@ try {
       cloneRel: marker?.getAttribute("rel"),
       liveTarget: liveMarker?.getAttribute("target"),
       liveRel: liveMarker?.getAttribute("rel"),
+      // Obsidian gives a footnote no hover affordance of its own, and the
+      // definition can sit far below a long table, so the marker carries the
+      // definition text as a native tooltip — without the back-ref glyph.
+      markerTitle: marker?.getAttribute("title"),
+      liveMarkerTitle: liveMarker?.getAttribute("title"),
       fsLi: box(fsLi),
       fsTableWidth: Math.round(tb.width),
       leftGap: Math.round(tb.left - sb.left),
@@ -434,6 +439,16 @@ try {
   );
   check("the `[^ref]:` label is stripped from the rendered body", !reg.text.includes("[^ref]"), reg.text);
   check("the definition keeps the marker's number", reg.value === 1, `value=${reg.value}`);
+  check(
+    "hovering a resolved marker previews the definition",
+    reg.markerTitle === "표와 문단 양쪽에서 참조되는 각주." && !reg.markerTitle.includes("↩︎"),
+    `title=${JSON.stringify(reg.markerTitle)}`
+  );
+  check(
+    "the note's own marker is left without a tooltip",
+    reg.liveMarkerTitle === null,
+    `liveTitle=${JSON.stringify(reg.liveMarkerTitle)}`
+  );
   check("footnote marker points at an overlay-local anchor", !!reg.markerHref?.startsWith("#lookout-fs-"), `href=${reg.markerHref}`);
   check("the emitted li keeps its namespaced id through _scrub", reg.liId === reg.markerHref?.slice(1) && reg.liFootnoteId === reg.liId, JSON.stringify({ liId: reg.liId, href: reg.markerHref }));
   check(

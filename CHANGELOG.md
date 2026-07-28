@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   note's own footnote navigation. The footnote text is laid out at a readable
   measure rather than at the table's width, so a narrow table no longer squeezes
   it into a one-word-per-line ribbon.
+- Hovering a marker in full screen previews its definition. Obsidian gives a
+  footnote no hover affordance of its own, and in full screen the definition can
+  sit far below a long table, so the marker would otherwise be a number with
+  nothing behind it until clicked. The note's own markers are untouched.
 - Scope: footnotes resolve in **Reading view**. **Live Preview is not
   supported**, because Obsidian parses each block there on its own: a
   reference-style marker (`[^id]`) is not rendered inside a table widget at all
