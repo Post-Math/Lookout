@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-07-28
+
+Compliance fixes raised by Obsidian's plugin review. No change in behaviour.
+
+### Fixed
+
+- Elements are created through Obsidian's `createEl` helper instead of
+  `document.createElement`, per the plugin guidelines
+  (`obsidianmd/prefer-create-el`).
+- The inert footnote marker's dotted underline is written with the
+  `text-decoration-line` / `text-decoration-style` longhands. Obsidian's CSS
+  check flags the multi-value `text-decoration` shorthand as only partially
+  supported at this plugin's `minAppVersion`.
+
+### Internal — recurrence prevention
+
+- `eslint-plugin-obsidianmd` moves 0.3.0 → 0.4.1. Both findings above are rules
+  the local gate already had in principle, but the pinned 0.3.0 did not yet
+  carry them, so CI could not have caught either one before submission.
+- `npm run lint` now runs with `--max-warnings=0`. `prefer-create-el` reports at
+  *warning* severity, so the gate exited 0 while the violation stood; warnings
+  now fail the build the same as errors.
+
 ## [1.2.0] - 2026-07-28
 
 ### Added
@@ -192,7 +215,8 @@ Initial public release.
   mode), not only in Reading view. The table being actively edited is left
   untouched.
 
-[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.2.0...HEAD
+[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.2.1...HEAD
+[1.2.1]: https://github.com/Post-Math/Lookout/compare/1.2.0...1.2.1
 [1.2.0]: https://github.com/Post-Math/Lookout/compare/1.1.7...1.2.0
 [#28]: https://github.com/Post-Math/Lookout/issues/28
 [1.1.3]: https://github.com/Post-Math/Lookout/compare/1.1.2...1.1.3
