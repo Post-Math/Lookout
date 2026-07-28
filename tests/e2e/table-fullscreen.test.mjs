@@ -1197,6 +1197,64 @@ try {
     JSON.stringify(kbd)
   );
 
+  /* ===== modal semantics + focus trap ===== */
+  // The footnoted table on purpose: its overlay holds a close button, a marker
+  // and a back-reference, so Tab has somewhere to cycle and wrap-around is
+  // actually exercised. A plain table offers only the close button, which would
+  // pass the trap check without ever testing it.
+  await page.locator(".lookout-table-btn").nth(1).click({ force: true });
+  await page.waitForSelector(".lookout-fs-footnotes li");
+
+  const modal = await page.evaluate(() => {
+    const fs = document.querySelector(".lookout-fs--table");
+    return {
+      role: fs.getAttribute("role"),
+      ariaModal: fs.getAttribute("aria-modal"),
+      ariaLabel: fs.getAttribute("aria-label"),
+    };
+  });
+  check(
+    "the full-screen table overlay announces itself as a modal dialog",
+    modal.role === "dialog" && modal.ariaModal === "true" && !!modal.ariaLabel,
+    JSON.stringify(modal)
+  );
+
+  // Tab must cycle inside the overlay. Without the trap the first Tab walks
+  // onto the note's own controls behind it — focus lands somewhere the reader
+  // cannot see, and the next Enter activates it.
+  const trap = { escaped: 0, seen: [] };
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press("Tab");
+    const where = await page.evaluate(() => {
+      const a = document.activeElement;
+      return {
+        inside: !!a && !!a.closest(".lookout-fs--table"),
+        tag: a ? a.tagName + (a.className ? "." + String(a.className).split(" ")[0] : "") : "none",
+      };
+    });
+    if (!where.inside) trap.escaped++;
+    trap.seen.push(where.tag);
+  }
+  check("Tab never escapes the full-screen overlay", trap.escaped === 0, JSON.stringify(trap));
+  check(
+    "Tab actually cycles — the overlay offers more than one stop",
+    new Set(trap.seen).size > 1,
+    JSON.stringify(trap.seen)
+  );
+
+  const shift = { escaped: 0 };
+  for (let i = 0; i < 4; i++) {
+    await page.keyboard.press("Shift+Tab");
+    const inside = await page.evaluate(
+      () => !!document.activeElement && !!document.activeElement.closest(".lookout-fs--table")
+    );
+    if (!inside) shift.escaped++;
+  }
+  check("Shift+Tab never escapes the full-screen overlay", shift.escaped === 0, JSON.stringify(shift));
+
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".lookout-fs", { state: "detached" });
+
   const inPage = await page.evaluate(() => window.__pageErrors);
   check("no page errors", pageErrors.length === 0 && inPage.length === 0, [...pageErrors, ...inPage].join(" | "));
 } finally {

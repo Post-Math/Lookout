@@ -103,9 +103,49 @@ const clamp = (v: number, lo: number, hi: number): number =>
   Math.min(hi, Math.max(lo, v));
 
 const REDUCED_MOTION =
-  typeof window !== "undefined" &&
-  !!window.matchMedia &&
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  typeof activeWindow !== "undefined" &&
+  !!activeWindow.matchMedia &&
+  activeWindow.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/*
+ * What Tab may reach inside a full-screen overlay. Deliberately narrow: the
+ * footnote definitions carry `tabindex="-1"` as programmatic jump targets and
+ * must stay out of the tab order, and an unresolvable marker has had its `href`
+ * stripped, which already makes it unfocusable.
+ */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]),' +
+  ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Keep Tab inside `overlay`. A full-screen overlay covers the workspace, so
+ * without this the first Tab walks onto the note's own links and buttons behind
+ * it — focus lands somewhere the reader cannot see, and the next Enter
+ * activates it. Obsidian's own modals do not do this, but they are small
+ * centred dialogs the reader can see past; ours is the whole screen.
+ *
+ * Visibility is tested with `getClientRects()`, not `offsetParent`: the close
+ * button is `position: fixed`, for which `offsetParent` is always null.
+ */
+function trapTab(overlay: HTMLElement, e: KeyboardEvent) {
+  if (e.key !== "Tab") return;
+  const items = Array.from(
+    overlay.querySelectorAll<HTMLElement>(FOCUSABLE)
+  ).filter((n) => n.getClientRects().length > 0);
+  // Nothing to land on — swallow Tab rather than let it escape the overlay.
+  if (!items.length) {
+    e.preventDefault();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = activeDocument.activeElement;
+  const inside = !!active && overlay.contains(active);
+  if (e.shiftKey ? active === first || !inside : active === last || !inside) {
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus({ preventScroll: true });
+  }
+}
 
 type ViewMode = "actual" | "fit" | "free";
 
@@ -246,6 +286,11 @@ class DiagramView {
 
     if (this.fs) {
       this.overlay = el("div", "lookout-fs");
+      // A modal surface: it covers the workspace, so say so rather than leave
+      // assistive tech to announce the note underneath as if it were reachable.
+      this.overlay.setAttribute("role", "dialog");
+      this.overlay.setAttribute("aria-modal", "true");
+      this.overlay.setAttribute("aria-label", "Mermaid 다이어그램 전체 화면");
       this.overlay.appendChild(this.viewport);
       activeDocument.body.appendChild(this.overlay);
     } else {
@@ -394,7 +439,7 @@ class DiagramView {
   // not the live viewport height, so `fit` can contain a tall diagram against
   // it without the chicken-and-egg of resizing the frame it is measuring.
   _inlineMaxHeight() {
-    return Math.round(window.innerHeight * INLINE_MAX_VH);
+    return Math.round(activeWindow.innerHeight * INLINE_MAX_VH);
   }
 
   // Default / "100%" view: actual size, anchored top-left.
@@ -596,6 +641,10 @@ class DiagramView {
       e.preventDefault();
       this.close();
       return;
+    }
+    if (this.fs && this.overlay) {
+      trapTab(this.overlay, e);
+      if (e.key === "Tab") return;
     }
     if (!this.fs && activeDocument.activeElement !== this.viewport) return;
 
@@ -1370,6 +1419,11 @@ class TableView {
   openFullscreen() {
     if (this.overlay) return;
     const overlay = el("div", "lookout-fs lookout-fs--table");
+    // A modal surface: it covers the workspace, so say so rather than leave
+    // assistive tech to announce the note underneath as if it were reachable.
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "표 전체 화면");
     this.overlay = overlay;
 
     // The clone lives outside the note, so Obsidian's table styling (borders,
@@ -1606,7 +1660,11 @@ class TableView {
       e.preventDefault();
       this.fsCloseByKeyboard = true;
       this.onCloseFs();
+      return;
     }
+    // Footnote definitions can arrive after the overlay opens, so the trap has
+    // to read the overlay's focusables at keypress time, not at open time.
+    if (this.overlay) trapTab(this.overlay, e);
   }
 
   onCloseFs = () => {

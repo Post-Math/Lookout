@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Both full-screen views — diagrams and tables — are now proper modal surfaces.
+  They cover the workspace, but `Tab` used to walk straight out of them onto the
+  note's own links and buttons behind the overlay, so focus landed where the
+  reader could not see it and the next `Enter` activated it. `Tab` and
+  `Shift+Tab` now cycle within the overlay, and it identifies itself to
+  assistive tech as a labelled modal dialog.
 - The minimum supported Obsidian version is now **1.6.6**, the release that
   exposes footnotes in the metadata cache — the single source full-screen
   footnote definitions are read from.

@@ -152,6 +152,54 @@ try {
     bFit.vpH <= cap + 1,
     `vpH=${bFit.vpH.toFixed(1)} cap=${cap}`
   );
+
+  // ===== full-screen overlay: modal semantics + focus trap =====
+  await page.click(inline('[aria-label="전체 화면으로 보기"]'), { force: true });
+  await page.waitForSelector(".lookout-viewport--fs");
+
+  const modal = await page.evaluate(() => {
+    const fs = document.querySelector(".lookout-fs");
+    return {
+      role: fs.getAttribute("role"),
+      ariaModal: fs.getAttribute("aria-modal"),
+      ariaLabel: fs.getAttribute("aria-label"),
+    };
+  });
+  check(
+    "full screen: the overlay announces itself as a modal dialog",
+    modal.role === "dialog" && modal.ariaModal === "true" && !!modal.ariaLabel,
+    JSON.stringify(modal)
+  );
+
+  // Without the trap, Tab walks onto the inline view's own toolbar behind the
+  // overlay — focus lands where the reader cannot see it.
+  const trap = { escaped: 0, seen: [] };
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press("Tab");
+    const where = await page.evaluate(() => {
+      const a = document.activeElement;
+      return {
+        inside: !!a && !!a.closest(".lookout-fs"),
+        tag: a ? a.tagName + (a.className ? "." + String(a.className).split(" ")[0] : "") : "none",
+      };
+    });
+    if (!where.inside) trap.escaped++;
+    trap.seen.push(where.tag);
+  }
+  check("full screen: Tab never escapes the overlay", trap.escaped === 0, JSON.stringify(trap));
+  check(
+    "full screen: Tab actually cycles — more than one stop",
+    new Set(trap.seen).size > 1,
+    JSON.stringify(trap.seen)
+  );
+
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".lookout-fs", { state: "detached" });
+  const restored = await page.evaluate(
+    () => !!document.activeElement &&
+      document.activeElement.matches(".lookout-viewport:not(.lookout-viewport--fs)")
+  );
+  check("full screen: Esc returns focus to the inline frame", restored);
 } finally {
   await browser.close();
 }
