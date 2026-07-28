@@ -88,14 +88,18 @@ function svgIcon(name: IconName): SVGSVGElement {
   return svg;
 }
 
-/** Create an element with an optional class. Tag-typed so callers keep `.type`, `.disabled`, … */
+/**
+ * Create a detached element with an optional class. Tag-typed so callers keep
+ * `.type`, `.disabled`, … Obsidian's `createEl` rather than
+ * `document.createElement`, per its plugin guidelines: `Node.createEl` would
+ * *append* to the node it is called on, so the free function is the one that
+ * returns something detached.
+ */
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   cls?: string
 ): HTMLElementTagNameMap[K] {
-  const node = activeDocument.createElement(tag);
-  if (cls) node.className = cls;
-  return node;
+  return createEl(tag, cls ? { cls } : undefined);
 }
 
 /** Clamp `v` into the inclusive `[lo, hi]` range. */
