@@ -446,7 +446,11 @@
 .lookout-table-fs-scroll .lookout-fn-unresolved {
   color: var(--text-muted);
   cursor: default;
-  text-decoration: underline dotted;
+  /* Longhands, not the `text-decoration` shorthand: Obsidian's plugin CSS check
+     flags the multi-value shorthand as only partially supported at our
+     `minAppVersion`, while these two have been safe for far longer. */
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
   text-underline-offset: 2px;
 }
 

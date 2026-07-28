@@ -34,6 +34,28 @@ const bootstrap = `
   // Obsidian runtime augmentations the bundle relies on (absent outside Obsidian).
   globalThis.activeWindow = window;
   globalThis.activeDocument = document;
+  // Obsidian's DOM helper, faithful to the real signature: the second argument
+  // is a class string or a DomElementInfo. A stub shaped to whatever the code
+  // happens to ask for is how a green suite hid a broken feature before.
+  globalThis.createEl = function (tag, o, cb) {
+    const node = document.createElement(tag);
+    if (typeof o === "string") o = { cls: o };
+    if (o) {
+      if (o.cls) node.className = Array.isArray(o.cls) ? o.cls.join(" ") : o.cls;
+      if (o.text) node.textContent = o.text;
+      if (o.attr) for (const k in o.attr) node.setAttribute(k, o.attr[k]);
+      if (o.title) node.title = o.title;
+      if (o.parent) o.prepend ? o.parent.prepend(node) : o.parent.appendChild(node);
+    }
+    if (cb) cb(node);
+    return node;
+  };
+  Node.prototype.createEl = function (tag, o, cb) {
+    if (typeof o === "string") o = { cls: o };
+    o = o || {};
+    o.parent = this;
+    return globalThis.createEl(tag, o, cb);
+  };
   const _setCssStyles = function (styles) { Object.assign(this.style, styles); };
   const _setCssProps = function (props) { for (const k in props) this.style.setProperty(k, props[k]); };
   HTMLElement.prototype.setCssStyles = _setCssStyles;
