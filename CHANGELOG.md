@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-07-28
+
+The remaining warning from Obsidian's plugin review. No change in behaviour.
+
+### Fixed
+
+- The inert footnote marker's dotted underline is drawn with a `border-bottom`
+  instead of `text-decoration`. 1.2.1 moved the rule to the
+  `text-decoration-line` / `text-decoration-style` longhands on the assumption
+  that only the multi-value shorthand was flagged; Obsidian's CSS check
+  actually maps the entire `text-decoration` family onto a single browser
+  feature that Chrome supports only partially, so every spelling of it warns.
+  The marker looks the same.
+
+### Internal — recurrence prevention
+
+- `scripts/validate.mjs` now fails the build if `styles.css` declares any
+  `text-decoration*` property. The reviewer's CSS check runs on their side
+  only, so the previous fix could not be verified before submission and the
+  same warning came back a second time; the local gate now carries the rule.
+
 ## [1.2.1] - 2026-07-28
 
 Compliance fixes raised by Obsidian's plugin review. No change in behaviour.
@@ -215,7 +236,8 @@ Initial public release.
   mode), not only in Reading view. The table being actively edited is left
   untouched.
 
-[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.2.1...HEAD
+[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.2.2...HEAD
+[1.2.2]: https://github.com/Post-Math/Lookout/compare/1.2.1...1.2.2
 [1.2.1]: https://github.com/Post-Math/Lookout/compare/1.2.0...1.2.1
 [1.2.0]: https://github.com/Post-Math/Lookout/compare/1.1.7...1.2.0
 [#28]: https://github.com/Post-Math/Lookout/issues/28
