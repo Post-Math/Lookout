@@ -446,12 +446,14 @@
 .lookout-table-fs-scroll .lookout-fn-unresolved {
   color: var(--text-muted);
   cursor: default;
-  /* Longhands, not the `text-decoration` shorthand: Obsidian's plugin CSS check
-     flags the multi-value shorthand as only partially supported at our
-     `minAppVersion`, while these two have been safe for far longer. */
-  text-decoration-line: underline;
-  text-decoration-style: dotted;
-  text-underline-offset: 2px;
+  /* A border, not `text-decoration` — and not its longhands either. Obsidian's
+     plugin CSS check groups the whole `text-decoration` family under one
+     caniuse feature that Chrome only *partially* supports, so every spelling of
+     it is flagged; the dotted bottom border draws the same cue out of CSS1
+     properties nothing has ever qualified. `padding-bottom` stands in for the
+     underline offset. */
+  border-bottom: 1px dotted currentColor;
+  padding-bottom: 1px;
 }
 
 .lookout-fs-close {
