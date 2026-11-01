@@ -5,7 +5,8 @@ Open it from the dev...main compare with:
   ?expand=1&template=release.md
 (base: main, compare: dev)
 
-Bump manifest.json + versions.json + CHANGELOG.md on `dev` BEFORE opening this
+Bump manifest.json + package.json/package-lock.json + versions.json +
+CHANGELOG.md on `dev` BEFORE opening this
 PR. On merge, the Release workflow auto-tags `main` and publishes the release.
 -->
 
@@ -21,6 +22,7 @@ PR. On merge, the Release workflow auto-tags `main` and publishes the release.
 ## Pre-merge checklist
 
 - [ ] `manifest.json` `version` is set to **X.Y.Z**
+- [ ] `package.json` / `package-lock.json` `version` is **X.Y.Z** (`npm version X.Y.Z --no-git-tag-version`)
 - [ ] `versions.json` has `"X.Y.Z": "<minAppVersion>"` (matches `manifest.minAppVersion`)
 - [ ] `CHANGELOG.md` has a dated `## [X.Y.Z]` section (moved out of *Unreleased*)
 - [ ] `node --check main.js` and `node scripts/validate.mjs` pass locally

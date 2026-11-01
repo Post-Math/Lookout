@@ -111,6 +111,8 @@ The version bump lands on `dev` first:
 
 1. On a branch off `dev`, prepare the release:
    - bump `version` in `manifest.json`,
+   - bump `package.json` / `package-lock.json` to the same version
+     (`npm version <x.y.z> --no-git-tag-version`),
    - add the matching entry to `versions.json` (`"<version>": "<minAppVersion>"`),
    - move the `Unreleased` notes in [`CHANGELOG.md`](CHANGELOG.md) into a dated
      `## [<version>]` section.
