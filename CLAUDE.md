@@ -43,7 +43,7 @@ A note containing a wide Mermaid diagram and a wide table exercises both feature
 
 ## Architecture
 
-Everything lives in `src/main.ts` (~900 lines), three classes:
+Everything lives in `src/main.ts` (~1,850 lines), three classes:
 
 - **`LookoutPlugin`** (the `default` export) — lifecycle and **discovery**. It finds rendered Mermaid `<svg>`s (`.mermaid svg, svg[id^="mermaid-"]`) and `<table>`s anywhere in the document and wraps each in a view. Discovery is driven by several overlapping triggers because Mermaid renders asynchronously and Obsidian re-renders panes on navigation: `onLayoutReady`, workspace events (`layout-change`, `active-leaf-change`, `file-open`), a `registerMarkdownPostProcessor`, and a `MutationObserver` on `document.body`. All of these funnel through `queueScan()` (debounced ~120ms) → `scan()` → `scanWithin(root)` → `process()` / `processTable()`.
 - **`DiagramView`** — one pan/zoom controller per diagram. The same class serves both the **inline** frame (wraps the live svg in place) and **full-screen** (wraps a *clone* in a fixed overlay). It owns the transform math: `_measure`, `fit`, `actualSize`, `zoomTo`/`zoomBy`, `_panBounds`/`_clampPan`, and `_render`.
