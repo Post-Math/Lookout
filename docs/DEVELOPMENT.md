@@ -171,8 +171,9 @@ Summarised here; the authoritative version is in
   on merge to `main`**: the workflow installs deps, builds `main.js`, reads
   `version` from `manifest.json`, pushes a bare-version tag (no `v` prefix —
   Obsidian convention), and uploads `main.js` / `manifest.json` / `styles.css`.
-- A version bump touches three files in lockstep (checked by
-  `scripts/validate.mjs`): `manifest.json` (`version`) — keep `package.json`'s
-  `version` in sync — `versions.json` (`"<version>": "<minAppVersion>"`, equal to
-  `manifest.minAppVersion`), and `CHANGELOG.md` (move `Unreleased` into a dated
-  section).
+- A version bump touches these files in lockstep: `manifest.json` (`version`),
+  `package.json` + `package-lock.json` (`version`, equal to the manifest — run
+  `npm version <x.y.z> --no-git-tag-version`), `versions.json`
+  (`"<version>": "<minAppVersion>"`, equal to `manifest.minAppVersion`), and
+  `CHANGELOG.md` (move `Unreleased` into a dated section).
+  `scripts/validate.mjs` checks every one of these except the CHANGELOG.

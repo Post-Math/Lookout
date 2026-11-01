@@ -71,4 +71,4 @@ Lookout moves Obsidian-owned nodes (the svg, the table) into its own wrappers an
 
 - Default branch is **`dev`** — branch off it (`feat/*`, `fix/*`, `docs/*`, `chore/*`) and open PRs against `dev`, never `main`. Use Conventional Commits.
 - `main` only receives merges from `dev` or `hotfix/*`. **Releases are automatic on merge to `main`**: the workflow reads `version` from `manifest.json` and pushes a bare-version tag (no `v` prefix — Obsidian convention).
-- A version bump must touch three files in lockstep (validated by `scripts/validate.mjs`): `manifest.json` (`version`), `versions.json` (`"<version>": "<minAppVersion>"`, which must equal `manifest.minAppVersion`), and `CHANGELOG.md` (move `Unreleased` notes into a dated section).
+- A version bump must touch these files in lockstep: `manifest.json` (`version`), `package.json` + `package-lock.json` (`version`, must equal the manifest — use `npm version <x.y.z> --no-git-tag-version`), `versions.json` (`"<version>": "<minAppVersion>"`, which must equal `manifest.minAppVersion`), and `CHANGELOG.md` (move `Unreleased` notes into a dated section). `scripts/validate.mjs` enforces all but the CHANGELOG.
