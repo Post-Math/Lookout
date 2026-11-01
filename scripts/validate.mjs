@@ -56,6 +56,21 @@ if (manifest && versions) {
   }
 }
 
+// package.json / package-lock.json carry the same version. Nothing reads it at
+// runtime, which is exactly why it drifted unnoticed (stuck at 1.1.5 through
+// 1.2.0–1.2.2); check it so a release bump can't forget it again.
+if (manifest) {
+  for (const f of ["package.json", "package-lock.json"]) {
+    try {
+      const v = JSON.parse(readFileSync(f, "utf8")).version;
+      if (v === manifest.version) ok(`${f} version matches manifest (${v})`);
+      else fail(`${f} version "${v}" != manifest.version "${manifest.version}"`);
+    } catch (e) {
+      fail(`${f} unreadable: ${e.message}`);
+    }
+  }
+}
+
 /*
  * styles.css: properties Obsidian's plugin CSS check rejects.
  *

@@ -43,7 +43,7 @@ A note containing a wide Mermaid diagram and a wide table exercises both feature
 
 ## Architecture
 
-Everything lives in `src/main.ts` (~900 lines), three classes:
+Everything lives in `src/main.ts` (~1,850 lines), three classes:
 
 - **`LookoutPlugin`** (the `default` export) — lifecycle and **discovery**. It finds rendered Mermaid `<svg>`s (`.mermaid svg, svg[id^="mermaid-"]`) and `<table>`s anywhere in the document and wraps each in a view. Discovery is driven by several overlapping triggers because Mermaid renders asynchronously and Obsidian re-renders panes on navigation: `onLayoutReady`, workspace events (`layout-change`, `active-leaf-change`, `file-open`), a `registerMarkdownPostProcessor`, and a `MutationObserver` on `document.body`. All of these funnel through `queueScan()` (debounced ~120ms) → `scan()` → `scanWithin(root)` → `process()` / `processTable()`.
 - **`DiagramView`** — one pan/zoom controller per diagram. The same class serves both the **inline** frame (wraps the live svg in place) and **full-screen** (wraps a *clone* in a fixed overlay). It owns the transform math: `_measure`, `fit`, `actualSize`, `zoomTo`/`zoomBy`, `_panBounds`/`_clampPan`, and `_render`.
@@ -71,4 +71,4 @@ Lookout moves Obsidian-owned nodes (the svg, the table) into its own wrappers an
 
 - Default branch is **`dev`** — branch off it (`feat/*`, `fix/*`, `docs/*`, `chore/*`) and open PRs against `dev`, never `main`. Use Conventional Commits.
 - `main` only receives merges from `dev` or `hotfix/*`. **Releases are automatic on merge to `main`**: the workflow reads `version` from `manifest.json` and pushes a bare-version tag (no `v` prefix — Obsidian convention).
-- A version bump must touch three files in lockstep (validated by `scripts/validate.mjs`): `manifest.json` (`version`), `versions.json` (`"<version>": "<minAppVersion>"`, which must equal `manifest.minAppVersion`), and `CHANGELOG.md` (move `Unreleased` notes into a dated section).
+- A version bump must touch these files in lockstep: `manifest.json` (`version`), `package.json` + `package-lock.json` (`version`, must equal the manifest — use `npm version <x.y.z> --no-git-tag-version`), `versions.json` (`"<version>": "<minAppVersion>"`, which must equal `manifest.minAppVersion`), and `CHANGELOG.md` (move `Unreleased` notes into a dated section). `scripts/validate.mjs` enforces all but the CHANGELOG.

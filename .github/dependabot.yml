@@ -1,7 +1,8 @@
 version: 2
 updates:
-  # Keep GitHub Actions used in workflows up to date. (The plugin itself has
-  # no runtime dependencies — it ships as plain CommonJS with no build step.)
+  # Keep GitHub Actions used in workflows up to date. (The plugin has no
+  # runtime dependencies — `obsidian` is host-provided and never bundled — so
+  # npm only gets Dependabot *security* updates for the dev toolchain.)
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
