@@ -35,6 +35,21 @@
     "typescript-eslint": "^8.62.0"
   },
   "overrides": {
-    "moment": "^2.31.0"
+    "moment": "^2.31.0",
+    "eslint": {
+      "minimatch": "^11.0.1"
+    },
+    "@eslint/config-array": {
+      "minimatch": "^11.0.1"
+    },
+    "@eslint/eslintrc": {
+      "minimatch": "^11.0.1"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
+    },
+    "eslint-plugin-n": {
+      "minimatch": "^11.0.1"
+    }
   }
 }

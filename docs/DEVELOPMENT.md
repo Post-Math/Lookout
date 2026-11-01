@@ -121,6 +121,30 @@ relaxation: **`strictPropertyInitialization` is off**, because the view classes
 initialize their fields in `_build()` / `_buildToolbar()` rather than the
 constructor body. `strictNullChecks`, `noImplicitAny`, etc. remain on.
 
+### Dependency `overrides` (dev toolchain security pins)
+
+`package.json` `overrides` force patched versions that upstream ranges block.
+None of them reach `main.js` — they only affect the lint/type-check toolchain.
+
+- **`moment` → `^2.31.0`** (GHSA-4p3w-j4w9-5jqw). `obsidian` pins `moment` to
+  exactly `2.29.4`; it is only used for the type declarations.
+- **`minimatch` → `^11.0.1`** under `eslint`, `@eslint/config-array`,
+  `@eslint/eslintrc`, `@typescript-eslint/typescript-estree` and
+  `eslint-plugin-n` (GHSA-g3hv-75wg-m249 — only 11.0.1+ is patched, and no
+  upstream release accepts 11 yet). These consumers only use the named
+  `Minimatch` / `minimatch` exports, which 11 keeps.
+
+  The override is **not** applied to `eslint-plugin-import` / `eslint-plugin-react`
+  (minimatch 3.x) or `eslint-plugin-json-schema-validator` (8.x): they call the
+  module itself (`minimatch(…)` / default import), and minimatch ≥ 10 exports a
+  plain object, so 11 would crash them. 3.x predates the vulnerable
+  `globParts` preprocessing entirely, and the `json-schema-validator` rules are not
+  enabled for `src/`. That is why the GitHub alert for this advisory can still
+  list those copies.
+
+Drop an override once the upstream range covers the patched version
+(`npm ls <pkg> --all` shows the tree). After changing one, re-run the full CI gate.
+
 ## Code guidelines (Obsidian)
 
 Keep changes within Obsidian's plugin guidelines:
