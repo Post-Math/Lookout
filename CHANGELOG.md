@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-02
+
+Development-toolchain security and release-hygiene maintenance. No change in
+behaviour; the shipped `main.js` / `styles.css` are byte-identical to 1.2.2.
+
+### Security — dev toolchain only
+
+- `moment` is pinned to `^2.31.0` via npm `overrides` (GHSA-4p3w-j4w9-5jqw).
+  `obsidian` pins 2.29.4 exactly, so Dependabot could not update it; it is used
+  only for type declarations and is never bundled.
+- `minimatch` is pinned to `^11.0.1` under ESLint, `@eslint/config-array`,
+  `@eslint/eslintrc`, `@typescript-eslint/typescript-estree` and
+  `eslint-plugin-n` (GHSA-g3hv-75wg-m249), replacing every copy that contains
+  the vulnerable code. The 3.x / 8.x copies used by eslint-plugin-import / -react
+  / -json-schema-validator stay because 11 would break them; see
+  `docs/DEVELOPMENT.md`.
+- Lockfile security bumps: `js-yaml` 4.3.2, `brace-expansion` 1.1.21 / 2.1.7 /
+  5.0.12, `fast-uri` 3.1.9 (#43, #44, #45).
+
+### Internal — recurrence prevention
+
+- `package.json` / `package-lock.json` carry the release version again (they
+  were stuck at 1.1.5 since 1.2.0), and `scripts/validate.mjs` now fails CI when
+  they disagree with `manifest.json`.
+
 ## [1.2.2] - 2026-07-28
 
 The remaining warning from Obsidian's plugin review. No change in behaviour.
@@ -236,7 +261,8 @@ Initial public release.
   mode), not only in Reading view. The table being actively edited is left
   untouched.
 
-[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.2.2...HEAD
+[Unreleased]: https://github.com/Post-Math/Lookout/compare/1.2.3...HEAD
+[1.2.3]: https://github.com/Post-Math/Lookout/compare/1.2.2...1.2.3
 [1.2.2]: https://github.com/Post-Math/Lookout/compare/1.2.1...1.2.2
 [1.2.1]: https://github.com/Post-Math/Lookout/compare/1.2.0...1.2.1
 [1.2.0]: https://github.com/Post-Math/Lookout/compare/1.1.7...1.2.0
